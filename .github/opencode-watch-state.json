@@ -1,8 +1,8 @@
 {
-  "lastRelease": "v1.18.35",
+  "lastRelease": "v1.19.0",
   "fileShas": {
-    "identifier.ts": "aab182e24eb8e133300c5105e67e21d438550ab326e31fffac7763873c5ae5cd",
-    "session-id.ts": "da161dc7602f91a0528fce9f259d1ff83d84e8376d5b2cbd714ceeeb001c7b9b",
+    "identifier.ts": "77fc45a0401f03877521a6219e9691377e882a628826cc1489d51bc389c2f2fc",
+    "session-id.ts": "ae484a090640a6ed93946ad4fb621545f446b66dcb36d66f6ce0163ca7f1d1f7",
     "zen.mdx": "677cdd44817fd510a6acb4eb2b81d9e116f7695aa438123f834a7b1b4fd15cd7"
   },
   "freeModels": [
@@ -20,5 +20,5 @@
     "space-bunny-free",
     "step-5-preview-free"
   ],
-  "lastChecked": "2026-10-09T11:13:10.688Z"
+  "lastChecked": "2026-10-11T10:42:29.700Z"
 }
