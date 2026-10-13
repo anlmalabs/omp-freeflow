@@ -17,9 +17,9 @@ Thin by design: a model list, a relay proxy, and a log. The host (`pi-ai`) handl
 | Feature | What it does | Cost |
 | :--- | :--- | :--- |
 | **36 free models** | 10 from OpenCode Zen, 15 from KiloCode Gateway, 2 from Cline, 9 from OVHcloud AI Endpoints, context windows up to 1M. Full list below. | **$0** |
-| **Relay pool** | Route requests through your own Cloudflare Workers and Vercel Edge relays. Traffic spreads across the pool, or stays on one sticky relay. A relay that rate-limits, times out, or drops the connection cools down while healthy ones take its traffic. | **$0** beyond your platforms' free tiers |
+| **Relay pool** | Route requests through your own Cloudflare Workers, Deno Deploy, and Vercel Edge relays. Traffic spreads across the pool, or stays on one sticky relay. A relay that rate-limits, times out, or drops the connection cools down while healthy ones take its traffic. | **$0** beyond your platforms' free tiers |
 | **Automatic fallback** | When every relay is cooling down, requests go direct to upstream instead of failing. | **$0** |
-| **Short model names** | Every model has a slash-free, colon-free alias, plus an optional `:effort` suffix for thinking depth. You type `freeflow/<name>`. | **$0** |
+| **Short model names** | Most models have a slash-free, colon-free alias, plus an optional `:effort` suffix for thinking depth. You type `freeflow/<name>`; the two Cline models have no alias and must be typed in full. | **$0** |
 | **Shared local proxy** | One daemon on `127.0.0.1:28180` serves every session on the machine, so parallel subagents reuse it instead of opening their own connections. | **$0** |
 | **Logs you can read** | `~/.pi/agent/pi-freeflow.log`, rotated at 10MB. Tail it with `/freeflow logs`. | **$0** |
 
@@ -85,7 +85,7 @@ Manual fallback per platform:
 **Option A: Cloudflare Workers, auto deploy (recommended)**
 ```bash
 /freeflow deploy cloudflare  # prompts token in-memory, auto-adds to pool
-# or shorthand: /freeflow deploy (defaults to Cloudflare)
+# or /freeflow deploy with no argument to pick the platform interactively
 ```
 Manual fallback: `dash.cloudflare.com` → Workers → Create → Deploy → Edit code → paste the canonical worker source (see below) → Deploy → `/freeflow add https://your.workers.dev cf-worker-1`
 
@@ -110,7 +110,7 @@ For `api/relay.js`, use the canonical worker source (see below); `vercel.json` s
 
 **Canonical worker source (all platforms)**
 
-The relay worker template is generated per deployment by `/freeflow deploy`, with one shared core adapted for Vercel, Cloudflare, and Deno. Deployed relays accept requests from any pi-freeflow user by default, while only forwarding to an allowlist (`https://opencode.ai`, `https://api.kilo.ai`) with private-host and path checks.
+The relay worker template is generated per deployment by `/freeflow deploy`, with one shared core adapted for Vercel, Cloudflare, and Deno. Every deploy embeds a random 32-byte secret, and the generated worker answers `401` to any request without a matching `x-relay-auth` header; the client sends that secret to each relay in the pool. Only a hand-pasted legacy worker built without a secret is open to anyone. Either way, a relay forwards only to an allowlist (`https://opencode.ai`, `https://api.kilo.ai`) with private-host and path checks.
 
 ```js
 // Minimal Cloudflare illustration. Prefer /freeflow deploy: the generated
@@ -226,9 +226,9 @@ Keyless access. Short aliases work for every row (the full ID is in parentheses)
 | `kilo-auto` (`kilo-auto/free`) | Kilo Gateway Auto | **256K** (256.000) | **10K** (10.000) | `minimal…xhigh`\* | ❌ |
 | `openrouter` (`openrouter/free`) | OpenRouter Free | **200K** (200.000) | **65K** (65.536) | `minimal…xhigh`\* | ✅ |
 | `glyph-cluster` (`stealth/glyph-cluster`) | Stealth preview (lab undisclosed) | **256K** (256.000) | **256K** (256.000) | `minimal…xhigh`\* | ❌ |
-| `step-5-preview:kilo` (`stepfun/...:free`) | StepFun | **1M** (1.000.000) | **64K** (64.000) | `minimal…xhigh`\* | ✅ |
+| `step-5-preview:kilo` (`stepfun/...:free`) | StepFun | **1M** (1.000.000) | **64K** (65.536) | `minimal…xhigh`\* | ✅ |
 | `inkling-small` (`thinkingmachines/inkling-small:free`) | Thinking Machines | **1M** (1.048.576) | **262K** (262.144) | `minimal…xhigh`\* | ✅ |
-| `ling-3.1-flash-kilo` (`inclusionai/ling-3.1-flash`) | Inclusion AI | **262K** (262.144) | **32K** (32.768) | `minimal…xhigh`\* | ❌ |
+| `ling-3.1-flash:kilo` (`inclusionai/ling-3.1-flash`) | Inclusion AI | **262K** (262.144) | **32K** (32.768) | `minimal…xhigh`\* | ❌ |
 
 \* Levels are forwarded as-is through the OpenRouter-style nested `reasoning` parameter; effort mapping is decided by each model. MiMo collapses `minimal→low` and `xhigh→high` upstream, so its selector shows 5 labels but only 3 distinct effort values.
 
@@ -243,7 +243,7 @@ Each account can only be saved once: an extra login for an account you already h
 | Model ID | Creator / Lab | Context | Max Output | Thinking | Vision |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `cline-free/muse-spark-1.3-contributor` | Meta Superintelligence Labs | **1M** (1.048.576) | **131K** (131.072) | `minimal…xhigh`\* | ✅ |
-| `z-ai/glm-5.3-flash` | Zhipu AI | **1M** (1.000.000) | **131K** (131.072) | `low/high/max` | ✅ |
+| `z-ai/glm-5.3-flash` | Zhipu AI | **1M** (1.048.576) | **131K** (131.072) | `low/high/max` | ✅ |
 
 #### OVHcloud AI Endpoints (9 models), OpenAI compatible
 
@@ -281,16 +281,16 @@ cat ~/.pi/agent/pi-freeflow.log | tail -n 50
 
 ### Design
 
-This package stays thin. It ships three things: a model catalog, a relay proxy, and a log. There is no build step and zero runtime dependencies. Thinking and prompt normalization stay with the host (`pi-ai`).
+This package stays thin. It ships three things: a model catalog, a relay proxy, and a log. There is no build step and one runtime dependency (`undici`). Thinking and prompt normalization stay with the host (`pi-ai`).
 
-About 19k lines including tests. The full suite (sandboxed, network-mocked) and typecheck pass before every release. See CHANGELOG.md.
+About 43k lines including tests: `src/` is roughly 17k across 27 files, and the 78 test files add roughly 26k more. The full suite (sandboxed, network-mocked) and typecheck pass before every release. See CHANGELOG.md.
 
 ---
 
 ### FAQ
 
 **Do I need API keys?**
-No. Kilo uses a shared free credential and OpenCode free models need no header. You never paste a key. Cline free models need a browser login instead: `/freeflow cline login` saves it to a per-user pool on your machine. OVHcloud AI Endpoints models need no account and no key at all.
+No. OpenCode and Kilo free models are both keyless: the proxy sends no `Authorization` header at all, and a placeholder credential is rejected rather than merely unused — `Bearer kilo-free` answers `401 INVALID_TOKEN`, while sending nothing answers 200 for every free catalog model. You never paste a key. Cline free models need a browser login instead: `/freeflow cline login` saves it to a per-user pool on your machine. OVHcloud AI Endpoints models need no account and no key at all.
 
 **What if all relays hit rate limits?**
 The proxy tries direct upstream. If that is also rate-limited, the host shows the limit. That number is the shared upstream cap; without relays you would hit the same wall sooner.
@@ -357,27 +357,42 @@ pnpm smoke       # verifies extensions/index.ts loads without crashing
 
 ```
 src/
-├── index.ts          # extension entry, lifecycle hooks
-├── models.ts         # 36-model catalog definitions
-├── catalog.ts        # model catalog cache (24h disk)
-├── proxy.ts          # local proxy server (127.0.0.1:28180)
-├── relay.ts          # relay fetch, rolling on retryable failures
-├── relay-state.ts    # relay pool state, health tracking
-├── stream-pipe.ts    # SSE stream piping and truncation resilience
-├── commands.ts       # /freeflow CLI subcommands
-├── deploy.ts         # guided relay deploy (vercel/cloudflare/deno)
-├── config.ts         # constants, whitelists, paths, and runtime settings
-├── logger.ts         # file logger with 10MB rotation
-└── types.ts          # shared type definitions
+├── index.ts                 # extension entry, lifecycle hooks
+├── models.ts                # 36-model catalog definitions
+├── catalog.ts               # model catalog cache (24h disk)
+├── proxy.ts                 # local proxy server (127.0.0.1:28180)
+├── client.ts                # session-side daemon attach/spawn and heartbeat
+├── daemon.ts                # detached proxy daemon process (owns the port)
+├── lease.ts                 # client lease registry and TTL retirement
+├── health.ts                # loopback /_health relay snapshot
+├── responses.ts             # Responses-API reasoning portability
+├── tool-translation.ts      # tool reshape across chat/responses/messages
+├── tool-args.ts             # schema-driven repair of model tool-call arguments
+├── relay.ts                 # relay fetch, rolling on retryable failures
+├── relay-state.ts           # relay pool state, health tracking
+├── probe.ts                 # relay reachability and latency probe
+├── upstream-health.ts       # Zen free-tier gating watch and Kilo failover
+├── stream-pipe.ts           # SSE stream piping and truncation resilience
+├── opencode-fingerprint.ts  # Zen free-tier client fingerprint enforcement
+├── system-ca-fetch.ts       # OS-trust-store retry for intercepted TLS
+├── commands.ts              # /freeflow CLI subcommands
+├── deploy.ts                # guided relay deploy (vercel/cloudflare/deno)
+├── cline-accounts.ts        # per-slot Cline key pool with failover
+├── cline-device-auth.ts     # Cline WorkOS device-flow login
+├── update-checker.ts        # npm registry version check, cached
+├── updater.ts               # package-manager choice for /freeflow update
+├── config.ts                # constants, whitelists, paths, and runtime settings
+├── logger.ts                # file logger with 10MB rotation
+└── types.ts                 # shared type definitions
 extensions/
-└── index.ts          # OMP/Pi extension manifest
+└── index.ts                 # OMP/Pi extension manifest
 test/
-└── *.test.ts         # mirrors src/, node:test runner
+└── *.test.ts                # mirrors src/, node:test runner
 ```
 
 #### Guidelines
 
-- **Stay thin.** Zero runtime dependencies, no build step. If it belongs in the host (`pi-ai`), don't add it here.
+- **Stay thin.** One runtime dependency (`undici`), no build step. If it belongs in the host (`pi-ai`), don't add it here.
 - **Test what you touch.** Every `src/*.ts` has a matching `test/*.test.ts`. Add or update tests for your change.
 - **Keep model IDs clean.** Slash-free, colon-free aliases for CLI compatibility. See existing patterns in `models.ts`.
 - **One concern per PR.** Bug fix? One PR. New relay platform? Separate PR. Easier to review, faster to merge.

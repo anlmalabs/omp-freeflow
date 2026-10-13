@@ -17,39 +17,50 @@
                                          │
                    ┌─────────────────────┴─────────────────────┐
                    ▼                                           ▼
-      ┌─────────────────────────┐                 ┌─────────────────────────┐
-      │  Sticky Rolling Relay   │ ──(Failover)──► │     Direct Upstream     │
-      │ (Cloudflare / Vercel)   │                 │ (OpenCode/Kilo/Cline)   │
-      └─────────────────────────┘                 └─────────────────────────┘
+      ┌─────────────────────────────────────┐                 ┌─────────────────────────────────────┐
+      │        Sticky Rolling Relay         │ ──(Failover)──► │           Direct Upstream           │
+      │ (Cloudflare / Vercel / Deno Deploy) │                 │ (OpenCode/Kilo/Cline/OVHcloud)      │
+      └─────────────────────────────────────┘                 └─────────────────────────────────────┘
 ```
 
 ## Module Layout (`src/`)
 
 ```
 src/
-├── catalog.ts         # 24h atomic disk caching + dynamic model enrichment
-├── commands.ts        # /freeflow CLI commands and status bar widget
-├── config.ts          # Constants, whitelists, paths, and runtime settings
-├── deploy.ts          # Guided relay deploy (vercel/cloudflare/deno), in-memory tokens
-├── health.ts          # Loopback-only /health endpoint handler
-├── index.ts           # Extension bootstrap, provider registration, lifecycle hooks
-├── logger.ts          # Structured, leveled, rotating file logger (10MB x 10)
-├── models.ts          # 36 curated free model definitions and upstream mappings
-├── probe.ts           # Relay reachability probe (HTTP 200 + latency)
-├── proxy.ts           # Loopback HTTP proxy server on 28180 with master/worker reuse
-├── relay.ts           # Multi-cloud relay fetch with failover and direct fallback
-├── relay-state.ts     # Persistent relay pool state and ordering logic
-├── stream-pipe.ts     # Resilient SSE stream pass-through with thinking sniffing
-├── tool-args.ts       # Schema-driven repair of malformed model tool-call arguments
-├── types.ts           # Core domain types, Pi/OMP ExtensionAPI and UI contracts
-└── update-checker.ts  # Background version check + update notification
+├── catalog.ts               # 24h atomic disk caching + dynamic model enrichment
+├── client.ts                # Client-side daemon lifecycle: attach, lease, heartbeat renewal
+├── cline-accounts.ts        # Per-user Cline API key pool with in-order failover
+├── cline-device-auth.ts     # Cline WorkOS device-flow login (authorize/poll/refresh)
+├── commands.ts              # /freeflow CLI commands and status bar widget
+├── config.ts                # Constants, whitelists, paths, and runtime settings
+├── daemon.ts                # Detached proxy daemon process owning port 28180
+├── deploy.ts                # Guided relay deploy (vercel/cloudflare/deno), in-memory tokens
+├── health.ts                # Loopback-only /health endpoint handler
+├── index.ts                 # Extension bootstrap, provider registration, lifecycle hooks
+├── lease.ts                 # Client lease registry and heartbeat expiry for daemon retirement
+├── logger.ts                # Structured, leveled, rotating file logger (10MB x 10)
+├── models.ts                # 36 curated free model definitions and upstream mappings
+├── opencode-fingerprint.ts  # Zen free-tier fingerprint enforcement + SSE stream aggregation
+├── probe.ts                 # Relay reachability probe (HTTP 200 + latency)
+├── proxy.ts                 # Loopback HTTP proxy server on 28180 with master/worker reuse
+├── relay.ts                 # Multi-cloud relay fetch with failover and direct fallback
+├── relay-state.ts           # Persistent relay pool state and ordering logic
+├── responses.ts             # Responses-API reasoning portability for rejected encrypted blobs
+├── stream-pipe.ts           # Resilient SSE stream pass-through with thinking sniffing
+├── system-ca-fetch.ts       # Cline fetch that falls back to the OS trust store under TLS interception
+├── tool-args.ts             # Schema-driven repair of malformed model tool-call arguments
+├── tool-translation.ts      # Tool schema translation across the chat, responses and messages wire shapes
+├── types.ts                 # Core domain types, Pi/OMP ExtensionAPI and UI contracts
+├── update-checker.ts        # Background version check + update notification
+├── updater.ts               # /freeflow update package-manager choice (host first, global fallback)
+└── upstream-health.ts       # Zen gating detection with failover to a healthy Kilo model
 ```
 
 ## Single-Port Master/Worker Architecture
 
 When OMP dispatches parallel subagents, each spawns a child process. Rather than each binding its own port, pi-freeflow uses a cooperative master/worker protocol:
 
-1. **Startup Probe**: On extension load, sends a lightweight probe to `http://127.0.0.1:28180/v1/models` (500ms timeout).
+1. **Startup Probe**: On extension load, sends a lightweight probe to `http://127.0.0.1:28180/v1/models` (1500ms timeout).
 2. **Worker Reuse**: If the probe succeeds, the process reuses the existing master daemon — 0ms startup overhead.
 3. **Master Daemon**: If the probe fails, the process binds port 28180 and becomes the master proxy.
 4. **Race Guard**: Concurrent bind attempts on 28180 are handled gracefully — the loser re-probes and attaches to the winner.

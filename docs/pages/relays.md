@@ -28,8 +28,10 @@ Instead of VPN tunnels, pi-freeflow uses standard edge worker scripts across **C
 | **HTTP 200 (OK)** | Success | In `auto` the winner becomes the sticky target; in `spread` the pool is left as-is |
 | **HTTP 429 (Rate Limit)** | Roll to next relay | IP quota exceeded; fresh egress IP per relay |
 | **Relay Edge 404 (Dead Deployment)** | Roll to next relay | Deployment missing or deleted on relay host; auto-failover |
+| **HTTP 408 (Request Timeout)** | Roll to next relay | Transient request timeout; treated as retriable like the other edge failures |
 | **HTTP 502 / 503** | Roll to next relay | Upstream edge transient error |
-| **HTTP 504** | Fast fallback to direct | Vercel Edge 25s execution timeout |
+| **HTTP 504** | Roll to next relay | The response already arrived, so there is no 25s wait to repeat; a sibling relay is worth trying before the direct fallback |
+| **HTTP 413 (Payload Too Large)** | Continue to next relay, no health penalty | The pool is heterogeneous — one platform caps request size lower than another, so a later relay may well accept it; a failure mark would wrongly report a healthy relay as failed |
 | **HTTP 520-530** | Roll to next relay | Cloudflare network/origin drops |
 | **HTTP 500 (Model Error)** | Retry once on next relay | Transient model-side failure; surfaces unchanged if the next relay fails too |
 | **Interrupted stream** | Resume once on next relay | Stream cut mid-answer retries a text-only turn; turns already running tools are never replayed |

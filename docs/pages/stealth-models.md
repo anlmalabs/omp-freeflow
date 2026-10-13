@@ -48,6 +48,11 @@ the free-model picker.
   stealth preview with the lab undisclosed, but live on the free list and
   answering keyless probes (1M context, vision + tool calls). In the
   picker as `space-bunny`.
+- Glyph Cluster (`stealth/glyph-cluster`, KiloCode Gateway free list,
+  2026-10-09): masked-namespace id, added to the picker under the short alias
+  `glyph-cluster`. Live on the Kilo free list when added (free pricing, 256K
+  context) and answering a keyless 200. The underlying lab and model are
+  unannounced, so treat it as a watchlist entry, not a stable model.
 - Space Bunny Alpha (`stealth/space-bunny-alpha`, KiloCode Gateway free
   list, 2026-09-28): same stealth family under a Kilo-native ID, live on
   the free list then and answering keyless probes. **Left the Kilo free
