@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.35.0
+
+### Minor Changes
+
+- 9085408: Nine more free models, from OVHcloud's AI Endpoints — and no account needed
+
+  The picker now offers nine open-weight models served by OVHcloud AI Endpoints, bringing the catalog to 36: GPT-OSS 120B and 20B, four Qwen models (3.5 397B, 3.5 9B, 3.6 27B, 3.8 27B), Mistral Small 3.2 and Mistral 7B, and Meta Llama 3.3 70B. The four Qwens and Mistral Small 3.2 also read images.
+
+  Access is anonymous and keyless. There is nothing to sign up for and no key to paste — no login step, no saved credential, no setup of any kind. Pick a model and it works.
+
+  The honest caveat: OVH rate-limits anonymous callers per IP address. A burst of parallel subagents can run into `API rate limit exceeded`, the same way a shared OpenCode or Kilo quota does. Wait it out or spread the work across models. Requests to these models always go straight to OVH from your machine, never through your relay pool — there is no per-IP gate for a relay to route around.
+
+  Thinking depth is limited to the two levels OVH confirms, `low` and `high`, on the six models that reason. The output budgets are deliberately conservative: they are the smallest cap any provider offers for the same underlying model, so a turn never asks for more than OVH will give.
+
+### Patch Changes
+
+- 3408dad: Stop conversations from dying on request shapes the provider rejects
+
+  Three shapes that the provider answers with `400 invalid parameters` are now reshaped on the way out instead of failing the whole turn.
+
+  - **A model narrates a tool call instead of making one.** The reply is recorded as pre-tool commentary, and every later message replayed that turn back to the provider was rejected — the session could not continue or be resumed, because each retry sent the same history again.
+  - **A host asks for a specific tool or forces a tool call.** The free provider accepts only automatic tool selection, so an unsupported choice is dropped rather than sent. Nothing is imposed on a host that did not ask.
+  - **A tool name carries a character the provider rejects.** Spaces, colons and slashes are folded for the trip out and the caller's own name is restored on the way back, so the tool still runs under the name it was registered with. Names that are already accepted are sent exactly as they always were.
+
+  Measured on Muse Spark 1.3: the same three requests that each failed with an error now answer normally, and a well-formed tool set reaches the model byte-identical to before.
+
+- 9085408: Three free models that no longer answer are gone from the picker
+
+  `cline-free/deepseek-v4.1-flash`, `cline-free/kimi-k3` and `cline-free/solar-pro4` were retired upstream, so every turn on them failed. All three were probed twice against the live service on 2026-10-13 and each time answered `404 model not found` ("Cline has no such model. Refresh the model list and retry."), while the two Cline models that survive — `cline-free/muse-spark-1.3-contributor` and `z-ai/glm-5.3-flash` — answered 200 with the same login and request shape. The login, the quota rollover and every other model are unchanged; the picker is now 36 models (10 OpenCode, 15 Kilo, 2 Cline, 9 OVH).
+
 ## 1.34.0
 
 ### Minor Changes
