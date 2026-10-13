@@ -12,8 +12,59 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Trusted code only: the maintainer's own pushes and manual runs.
+  #
+  # This job targets a SELF-HOSTED runner on the maintainer's own machine. A
+  # self-hosted runner executes whatever the workflow tells it to, so it must
+  # never pick up a `pull_request` event: this is a public repository, and any
+  # anonymous fork can open a pull request whose package.json scripts or test
+  # files run as that machine's user. `pull_request` is therefore handled by
+  # the `test` matrix below on GitHub-hosted runners, and this job is gated to
+  # the events that only the maintainer can trigger.
+  test-local:
+    name: Test (acerblue-local - Node 22.x)
+    if: github.event_name != 'pull_request'
+    runs-on: [self-hosted, Linux, X64, acerblue-local]
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js 22.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck (tsc --noEmit)
+        run: pnpm run typecheck
+
+      - name: Build docs (vitepress)
+        run: pnpm run docs:build
+
+      - name: Smoke test (extension entrypoint)
+        run: pnpm run smoke
+
+      - name: Run test suite
+        run: pnpm test
+
+  # Untrusted code only: fork pull requests, on GitHub-hosted runners.
+  #
+  # This is where cross-platform coverage comes from. A push to main runs the
+  # same checks once on the local Linux runner above, so Windows and macOS are
+  # verified at review time rather than at merge time.
   test:
     name: Test (${{ matrix.os }} - Node ${{ matrix.node-version }})
+    if: github.event_name == 'pull_request'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
@@ -49,7 +100,7 @@ jobs:
       - name: Smoke test (extension entrypoint)
         run: pnpm run smoke
 
-      - name: Run test suite (107 unit & E2E tests)
+      - name: Run test suite
         run: pnpm test
 
   package-check:
