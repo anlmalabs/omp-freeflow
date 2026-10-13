@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.36.0
+
+### Minor Changes
+
+- bf358da: A new free model on the OpenCode Zen lane: Cat Jam
+
+  `cat-jam-free` joins the picker, bringing the catalog to 37 models (11 OpenCode, 15 Kilo, 2 Cline, 9 OVHcloud). No account, no key, no setup — it is keyless like every other Zen free model.
+
+  It thinks, and it has a 262,144-token window. That number was measured the hard way: the gateway happily accepts prompts four times that size and answers normally, but the model can no longer read them. A marker planted at the end of a 248,232-token prompt comes back; at 250,272 tokens it does not. So the advertised window is what the model can actually use, not merely what the service tolerates.
+
+  Two honest limits worth knowing before you pick it:
+
+  - **It is not available on the Responses API.** Requests sent that way are refused with a protocol error. It works on chat completions, which is what hosts use by default, but a host pinned specifically to Responses will not see it.
+  - **Thinking depth starts at "low".** The lowest setting is refused, so "minimal" is not offered; low, medium, high and extra-high all work.
+
+  The output budget is 131,072, the published figure for this model.
+
+### Patch Changes
+
+- bf358da: Long sessions no longer stall on a tool call whose arguments arrived spliced
+
+  Some models open their next tool call by echoing the tail of the one they had just seen, and occasionally stop before the closing brace. The result is a single argument string carrying both faults at once: the previous call's leftover text in front, and the last brace missing. The whole call was then rejected, the turn failed, and the host retried — which resent the same broken payload, so a long session could get stuck repeating it.
+
+  Both faults are now repaired together, so the caller's own arguments arrive intact.
+
+  The repair stays deliberately narrow. It only fires when a leftover fragment is actually present in front of the object, which is the evidence that the model was mid-call rather than that the request itself was malformed, and only when what follows is a complete object merely missing its closing brace. Arguments cut off part-way through a value are still refused untouched, because completing those would silently shorten them — and these arguments carry shell commands.
+
+  Tool calls that were already well-formed are unaffected and pass through byte-identically.
+
 ## 1.35.0
 
 ### Minor Changes
