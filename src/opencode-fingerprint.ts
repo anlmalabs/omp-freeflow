@@ -33,6 +33,7 @@ import {
  isOmpLikeCaller,
  restoreToolNameForCaller,
  retargetToolChoiceForUpstream,
+ sanitizeUpstreamToolName,
  translateToolsForPath,
  upstreamToolNameFor,
  type FindGlobRestore,
@@ -284,6 +285,133 @@ export function ensureMessagesFingerprintTools(body: Record<string, unknown>, om
 }
 
 /**
+ * Drop `phase: "commentary"` from assistant message items in the replayed
+ * history.
+ *
+ * Upstream tags the lead-in text of a tool-calling turn `phase: "commentary"`
+ * and the closing answer `phase: "final_answer"`. When the model narrates a
+ * tool call and emits none (the muse-spark ATEM leak, upstream
+ * anomalyco/opencode#44659), that commentary item ends its own turn — and
+ * upstream then rejects every replay of the history with `400
+ * invalid_request_error: The request contains invalid parameters`.
+ *
+ * Measured on `muse-spark-1.3-contributor-free`, one field at a time: the
+ * phase alone decides it. A terminal commentary item 400s; the same item
+ * followed by a function call, or by a `final_answer` item, returns 200; the
+ * id prefix and the text are irrelevant. Only the phase field is removed, and
+ * `phase` is output metadata the model never reads as instruction, so dropping
+ * it cannot change the answer.
+ *
+ * Every assistant message is swept, not just the turn's last item: upstream
+ * validates the whole replayed history, and a host may seat `system`,
+ * `developer` or additional-tool items between a commentary item and the next
+ * user message, so a tail-only sweep would miss one. One sweep also covers a
+ * commentary item left behind by an earlier turn once later turns append to
+ * the same history.
+ */
+function stripCommentaryPhase(body: Record<string, unknown>): void {
+ const input = body.input;
+ if (!Array.isArray(input)) return;
+ for (const item of input) {
+  if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+  const record = item as Record<string, unknown>;
+  if (record.role === "assistant" && record.phase === "commentary") delete record.phase;
+ }
+}
+
+/**
+ * Reduce `tool_choice` to what Zen accepts: `"auto"`, or absent.
+ *
+ * Upstream rejects every other value with `400 only "auto" is supported for
+ * tool_choice` — `"none"`, `"required"`, and named function choices alike
+ * (measured live 2026-10-12 on `muse-spark-1.3-contributor-free`, responses and
+ * chat). Absent means the same thing as `"auto"`, so an unsupported choice is
+ * dropped rather than translated. A choice is never imposed on a host that
+ * sent none.
+ *
+ * Dropping a choice can leave a host's native reasoning switched off: OMP
+ * forces its synthetic `think` tool with `reasoning: { effort: "none" }`
+ * (captured request 2026-10-12), so removing the forced call without
+ * restoring native effort would run the model with no reasoning at all.
+ */
+function enforceAutoToolChoice(body: Record<string, unknown>): void {
+ const choice = body.tool_choice;
+ if (choice === undefined) return;
+ if (typeof choice === "string" && choice.trim().toLowerCase() === "auto") return;
+ delete body.tool_choice;
+ restoreNativeEffortAfterChoiceDrop(body);
+}
+
+/**
+ * Put native reasoning back when the only thing enabling it was a dropped
+ * forced tool call.
+ *
+ * `"none"` is not a reasoning-off switch upstream, it is an unsupported value:
+ * `muse-spark-1.3-contributor-free` answers `400 reasoning_effort 'none' is
+ * not supported` (measured 2026-10-12). So the override is replaced with the
+ * model's own highest supported level rather than merely deleted, and a model
+ * whose declared map supports nothing but `off` gets the field dropped.
+ * Genuine reasoning-off (`"off"`) is the caller's real intent, never rewritten.
+ */
+function restoreNativeEffortAfterChoiceDrop(body: Record<string, unknown>): void {
+ const model = body.model;
+ if (typeof model !== "string") return;
+ const replacement = highestSupportedEffort(model);
+ if (replacement === null) return;
+ const nested = body.reasoning;
+ if (nested !== null && typeof nested === "object" && !Array.isArray(nested)) {
+  const rec = nested as Record<string, unknown>;
+  if (typeof rec.effort === "string" && rec.effort.trim().toLowerCase() === "none") {
+   rec.effort = replacement;
+   return;
+  }
+ }
+ for (const key of ["reasoning_effort", "reasoningEffort"] as const) {
+  const flat = body[key];
+  if (typeof flat === "string" && flat.trim().toLowerCase() === "none") {
+   body[key] = replacement;
+   return;
+  }
+ }
+}
+
+/**
+ * Highest non-null level a model's declared map supports, or null when the
+ * model declares no map or only supports `off` (nothing to fall back to).
+ */
+function highestSupportedEffort(model: string): string | null {
+ const map = getModelDef(model)?.thinkingLevelMap;
+ if (!map) return null;
+ for (const level of EFFORT_DESCENDING) {
+  if (map[level] !== null && map[level] !== undefined) return level;
+ }
+ return null;
+}
+
+/**
+ * Fold the name of a replayed tool-call item to a shape upstream accepts.
+ *
+ * A model can emit a malformed call and the host then replays it in `input[]`
+ * forever: upstream validates every replayed item, so one call named
+ * `id id=` (captured in a live session, emitted by `space-bunny-free`) 400s
+ * every subsequent turn of that conversation. Declarations were sanitized
+ * already; this covers the calls.
+ */
+function sanitizeReplayItemNames(body: Record<string, unknown>): void {
+ const input = body.input;
+ if (!Array.isArray(input)) return;
+ for (const item of input) {
+  if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+  const record = item as Record<string, unknown>;
+  if (record.type !== "function_call" && record.type !== "custom_tool_call") continue;
+  const name = record.name;
+  if (typeof name !== "string") continue;
+  const folded = sanitizeUpstreamToolName(name, new Set());
+  if (folded !== name) record.name = folded;
+ }
+}
+
+/**
  * Normalize a Zen Responses body to what upstream accepts. OMP/Pi hosts
  * sometimes carry Chat Completions leftovers on the responses path and
  * upstream rejects them with 400:
@@ -294,9 +422,12 @@ export function ensureMessagesFingerprintTools(body: Record<string, unknown>, om
  * - `temperature` / `top_p` are dropped (Responses rejects them).
  * - `response_format` is dropped (Chat Completions field, Responses rejects it).
  * - `parallel_tool_calls: false` is dropped; absent-or-true rides verbatim.
- * - `tool_choice` is auto-or-absent: `"none"` (string or `{ type: "none" }`)
- *   is dropped, everything else rides (named choices still retarget find->glob).
+ * - `tool_choice` is auto-or-absent: `"auto"` rides verbatim and everything
+   else is dropped, because Zen supports no other value (see
+   enforceAutoToolChoice).
  * - `store` defaults to false (never persisted server-side).
+ * - Assistant message items lose `phase: "commentary"`; upstream 400s the whole
+   request otherwise (see stripCommentaryPhase).
  * - Reasoning effort is clamped per model: when the model's thinkingLevelMap
  *   declares the requested effort as null (unsupported), the effort is clamped
  *   to the highest supported level. Covers all OpenCode models generically
@@ -310,6 +441,10 @@ export function normalizeResponsesBody(body: Record<string, unknown>): void {
   body.input = body.messages;
  }
  delete body.messages;
+ stripCommentaryPhase(body);
+ // After input[] exists: a replayed call name is only folded once the array is
+ // the one upstream will read.
+ sanitizeReplayItemNames(body);
  if (body.max_output_tokens === undefined) {
   if (typeof body.max_tokens === "number") body.max_output_tokens = body.max_tokens;
   else if (typeof body.max_completion_tokens === "number") body.max_output_tokens = body.max_completion_tokens;
@@ -320,11 +455,6 @@ export function normalizeResponsesBody(body: Record<string, unknown>): void {
  delete body.top_p;
  delete body.response_format;
  if (body.parallel_tool_calls === false) delete body.parallel_tool_calls;
- const choice = body.tool_choice;
- if (typeof choice === "string" ? choice.toLowerCase() === "none" : (
-  choice !== null && typeof choice === "object" && !Array.isArray(choice)
-  && (choice as Record<string, unknown>).type === "none"
- )) delete body.tool_choice;
  if (typeof body.model === "string") {
   const reasoning = body.reasoning;
   if (reasoning !== null && typeof reasoning === "object" && !Array.isArray(reasoning)) {
@@ -342,6 +472,9 @@ export function normalizeResponsesBody(body: Record<string, unknown>): void {
    }
   }
  }
+ // After the effort clamp: dropping a forced tool call is what triggers the
+ // native-effort restore, so it runs once clamping is settled.
+ enforceAutoToolChoice(body);
  if (body.store === undefined) body.store = false;
 }
 
@@ -380,19 +513,13 @@ export function enforceOpencodeFingerprint(
 } {
  const clientRequestedStream = body.stream === true;
  const callerHadTools = Array.isArray(body.tools) && body.tools.length > 0;
- // Zen responses shape conformance first (Chat leftovers, tool_choice none,
- // spark effort clamp, store default): Kilo/Cline bodies never reach here.
+ // Zen responses shape conformance first (Chat leftovers, tool_choice, spark
+ // effort clamp, store default): Kilo/Cline bodies never reach here.
  if (pathname.endsWith("/responses")) normalizeResponsesBody(body);
  // Chat path mirrors the responses drop: Zen free tier accepts only auto, so a
  // caller "none" (string or { type: "none" }) would 400 upstream. Messages
  // path keeps its own choice semantics.
- if (!pathname.endsWith("/responses") && !pathname.endsWith("/messages")) {
-  const noneChoice = body.tool_choice;
-  if (typeof noneChoice === "string" ? noneChoice.toLowerCase() === "none" : (
-   noneChoice !== null && typeof noneChoice === "object" && !Array.isArray(noneChoice)
-   && (noneChoice as Record<string, unknown>).type === "none"
-  )) delete body.tool_choice;
- }
+ enforceAutoToolChoice(body);
  // Upstream Zen free tier mandates stream: true for all free requests
  body.stream = true;
 
