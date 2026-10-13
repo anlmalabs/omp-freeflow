@@ -1,6 +1,6 @@
 # pi-freeflow
 
-> 30 free models with up to 1M context. No API keys to manage. Add your own relays to spread requests across more IPs.
+> 36 free models with up to 1M context. No API keys to manage. Add your own relays to spread requests across more IPs.
 
 Thin by design: a model list, a relay proxy, and a log. The host (`pi-ai`) handles thinking, normalization, and provider behavior.
 
@@ -16,7 +16,7 @@ Thin by design: a model list, a relay proxy, and a log. The host (`pi-ai`) handl
 
 | Feature | What it does | Cost |
 | :--- | :--- | :--- |
-| **30 free models** | 10 from OpenCode Zen, 15 from KiloCode Gateway, 5 from Cline, context windows up to 1M. Full list below. | **$0** |
+| **36 free models** | 10 from OpenCode Zen, 15 from KiloCode Gateway, 2 from Cline, 9 from OVHcloud AI Endpoints, context windows up to 1M. Full list below. | **$0** |
 | **Relay pool** | Route requests through your own Cloudflare Workers and Vercel Edge relays. Traffic spreads across the pool, or stays on one sticky relay. A relay that rate-limits, times out, or drops the connection cools down while healthy ones take its traffic. | **$0** beyond your platforms' free tiers |
 | **Automatic fallback** | When every relay is cooling down, requests go direct to upstream instead of failing. | **$0** |
 | **Short model names** | Every model has a slash-free, colon-free alias, plus an optional `:effort` suffix for thinking depth. You type `freeflow/<name>`. | **$0** |
@@ -185,7 +185,7 @@ The same command set works identically in OMP and Pi:
 
 ---
 
-### 30 models, one command
+### 36 models, one command
 
 ```bash
 /model → freeflow → pick
@@ -208,7 +208,7 @@ Good defaults for long coding sessions and agentic work.
 | `step-5-preview-free` | StepFun | **1M** (1.000.000) | **64K** (65.536) | `low … high` | ✅ |
 | `ling-3.1-flash-free` | Inclusion AI | **262K** (262.144) | **32K** (32.768) | `minimal … max` | ❌ |
 
-#### KiloCode Gateway (16 models), OpenRouter compatible
+#### KiloCode Gateway (15 models), OpenRouter compatible
 
 Keyless access. Short aliases work for every row (the full ID is in parentheses).
 
@@ -232,7 +232,7 @@ Keyless access. Short aliases work for every row (the full ID is in parentheses)
 
 \* Levels are forwarded as-is through the OpenRouter-style nested `reasoning` parameter; effort mapping is decided by each model. MiMo collapses `minimal→low` and `xhigh→high` upstream, so its selector shows 5 labels but only 3 distinct effort values.
 
-#### Cline (5 models), OpenAI compatible
+#### Cline (2 models), OpenAI compatible
 
 Rotating per-account promo, direct only (never through the relay pool). Sign in through your browser with `/freeflow cline login`, manage with `/freeflow cline accounts` and `/freeflow cline logout`. Requests roll across saved logins when one hits its daily free limit.
 
@@ -242,11 +242,28 @@ Each account can only be saved once: an extra login for an account you already h
 
 | Model ID | Creator / Lab | Context | Max Output | Thinking | Vision |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `cline-free/deepseek-v4.1-flash` | DeepSeek | **1M** (1.000.000) | **384K** (384.000) | `low/high/max` | ✅ |
 | `cline-free/muse-spark-1.3-contributor` | Meta Superintelligence Labs | **1M** (1.048.576) | **131K** (131.072) | `minimal…xhigh`\* | ✅ |
 | `z-ai/glm-5.3-flash` | Zhipu AI | **1M** (1.000.000) | **131K** (131.072) | `low/high/max` | ✅ |
-| `cline-free/kimi-k3` | Moonshot AI | **1M** (1.048.576) | **131K** (131.072) | `low/high/max` | ✅ |
-| `cline-free/solar-pro4` | Upstage | **512K** (524.288) | **131K** (131.072) | `minimal…max`\* | ❌ |
+
+#### OVHcloud AI Endpoints (9 models), OpenAI compatible
+
+Anonymous access — no account, no key, nothing to sign in to. Direct only (never through the relay pool), because OVH has no per-IP gate for relays to route around. OVH rate-limits anonymous callers per IP, so a burst of parallel subagents can hit `429 API rate limit exceeded`; the model list itself never costs anything.
+
+Pick them with the slash-free short name (the full ID is in parentheses). Only `low` and `high` thinking levels are offered, because those are the two OVH confirmed.
+
+All nine talk the normal chat API. Hosts that prefer the responses API work too — the proxy maps that shape to chat and maps the answer back, so tool calls and streamed output behave exactly as they do on the other providers.
+
+| Model ID | Creator / Lab | Context | Max Output | Thinking | Vision |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `gpt-oss-120b` (`ovh-free/gpt-oss-120b`) | OpenAI | **128K** (131.072) | **32K** (32.768) | `low/high` | ❌ |
+| `gpt-oss-20b` (`ovh-free/gpt-oss-20b`) | OpenAI | **128K** (131.072) | **32K** (32.768) | `low/high` | ❌ |
+| `qwen3.5-397b` (`ovh-free/Qwen3.5-397B-A17B`) | Alibaba Qwen | **256K** (262.144) | **64K** (65.536) | `low/high` | ✅ |
+| `qwen3.5-9b` (`ovh-free/Qwen3.5-9B`) | Alibaba Qwen | **256K** (262.144) | **64K** (65.536) | `low/high` | ✅ |
+| `qwen3.6-27b` (`ovh-free/Qwen3.6-27B`) | Alibaba Qwen | **256K** (262.144) | **64K** (65.536) | `low/high` | ✅ |
+| `qwen3.8-27b` (`ovh-free/Qwen3.8-27B`) | Alibaba Qwen | **256K** (262.144) | **32K** (32.768) | `low/high` | ✅ |
+| `mistral-small-3.2` (`ovh-free/Mistral-Small-3.2-24B-Instruct-2506`) | Mistral AI | **128K** (131.072) | **16K** (16.384) | ❌ | ✅ |
+| `mistral-7b-v0.3` (`ovh-free/Mistral-7B-Instruct-v0.3`) | Mistral AI | **64K** (65.536) | **64K** (65.536) | ❌ | ❌ |
+| `llama-3.3-70b` (`ovh-free/Meta-Llama-3_3-70B-Instruct`) | Meta | **128K** (131.072) | **16K** (16.384) | ❌ | ❌ |
 
 ---
 
@@ -273,7 +290,7 @@ About 19k lines including tests. The full suite (sandboxed, network-mocked) and 
 ### FAQ
 
 **Do I need API keys?**
-No. Kilo uses a shared free credential and OpenCode free models need no header. You never paste a key. Cline free models need a browser login instead: `/freeflow cline login` saves it to a per-user pool on your machine.
+No. Kilo uses a shared free credential and OpenCode free models need no header. You never paste a key. Cline free models need a browser login instead: `/freeflow cline login` saves it to a per-user pool on your machine. OVHcloud AI Endpoints models need no account and no key at all.
 
 **What if all relays hit rate limits?**
 The proxy tries direct upstream. If that is also rate-limited, the host shows the limit. That number is the shared upstream cap; without relays you would hit the same wall sooner.
@@ -341,7 +358,7 @@ pnpm smoke       # verifies extensions/index.ts loads without crashing
 ```
 src/
 ├── index.ts          # extension entry, lifecycle hooks
-├── models.ts         # 30-model catalog definitions
+├── models.ts         # 36-model catalog definitions
 ├── catalog.ts        # model catalog cache (24h disk)
 ├── proxy.ts          # local proxy server (127.0.0.1:28180)
 ├── relay.ts          # relay fetch, rolling on retryable failures

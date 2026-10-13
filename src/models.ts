@@ -1,10 +1,11 @@
 /**
  * Static model definitions and upstream routing catalogs for pi-freeflow
  *
- * Defines the 30 verified free models (live-verified 2026-10-09):
+ * Defines the 36 verified free models (live-verified 2026-10-13):
  * - 10 OpenCode Zen models (2 Responses API + 8 Chat Completions)
  * - 15 KiloCode Keyless Gateway models (OpenRouter format)
- * - 5 Cline direct-only models (per-user pool)
+ * - 2 Cline direct-only models (per-user pool)
+ * - 9 OVHcloud AI Endpoints models (keyless, direct-only)
  */
 
 import type { ModelDef, ThinkingLevelMap, Upstream } from "./types.ts";
@@ -378,24 +379,10 @@ export const KILO_MODELS: ModelDef[] = [
 ];
 
 /**
- * Full-range effort map (Solar Pro 4 — reference lists none..max; off stays
- * null per repo convention). The proxy passes effort through verbatim and
- * upstream serves the levels it supports.
- */
-const CLINE_REASONING_MAP: ThinkingLevelMap = {
- off: null,
- minimal: "minimal",
- low: "low",
- medium: "medium",
- high: "high",
- xhigh: "xhigh",
- max: "max",
-};
-/**
- * Narrow effort map for DeepSeek V4 Flash + GLM Flash + Kimi K3 — reference
- * reasoningOptions list effort values [low, high, max] only (no toggle
- * on GLM); minimal/medium/xhigh are not offered so the host never sends
- * an unsupported level (the proxy forwards effort verbatim).
+ * Narrow effort map for the Cline flash models still in the catalog (GLM 5.3
+ * Flash) — the reference reasoningOptions list effort values [low, high, max]
+ * only (no toggle on GLM); minimal/medium/xhigh are not offered so the host
+ * never sends an unsupported level (the proxy forwards effort verbatim).
  */
 const CLINE_FLASH_REASONING_MAP: ThinkingLevelMap = {
  off: null,
@@ -415,15 +402,6 @@ const CLINE_FLASH_REASONING_MAP: ThinkingLevelMap = {
  * Endpoint: https://api.cline.bot/api/v1/chat/completions
  */
 export const CLINE_MODELS: ModelDef[] = [
- {
-  id: "cline-free/deepseek-v4.1-flash",
-  name: "DeepSeek V4.1 Flash [Cline]",
-  reasoning: true,
-  contextWindow: 1_000_000,
-  maxTokens: 384_000,
-  input: ["text", "image"],
-  thinkingLevelMap: CLINE_FLASH_REASONING_MAP,
- },
  {
   id: "cline-free/muse-spark-1.3-contributor",
   name: "Muse Spark 1.3 [Cline]",
@@ -451,29 +429,157 @@ export const CLINE_MODELS: ModelDef[] = [
  input: ["text", "image", "video"],
   thinkingLevelMap: CLINE_FLASH_REASONING_MAP,
  },
+];
+
+/**
+ * Narrow effort map for the OVH reasoning models — probed live 2026-10-13:
+ * `reasoning_effort: "low"` and `"high"` are accepted (HTTP 200 with a
+ * populated reasoning stream). minimal/medium/xhigh/max were not confirmed,
+ * so they map to null and the picker never offers them. `minimal` must be an
+ * explicit null, not an omitted key: omitting it leaves the level selectable
+ * in the host. Same shape as CLINE_FLASH_REASONING_MAP.
+ */
+const OVH_REASONING_MAP: ThinkingLevelMap = {
+ off: null,
+ minimal: null,
+ low: "low",
+ medium: null,
+ high: "high",
+ xhigh: null,
+ max: null,
+};
+
+/**
+ * Catalog-id namespace for the OVH lane. OVH model ids are case-sensitive on
+ * the wire and several carry capitals and dots, so the prefix namespaces the
+ * lane (and keeps the id recognized by isFreeCatalogId) while the suffix is
+ * sent upstream verbatim.
+ */
+export const OVH_MODEL_PREFIX = "ovh-free/";
+
+/**
+ * OVHcloud AI Endpoints free models — keyless, direct-only.
+ * Endpoint: https://oai.endpoints.kepler.ai.cloud.ovh.net/v1
+ *
+ * Every id is OVH-native with an `ovh-free/` prefix; upstream only knows the
+ * suffix (a prefixed id answers 404 `model_not_found`, verified 2026-10-13),
+ * so the proxy strips the prefix on the wire. `api` stays unset, i.e.
+ * openai-completions: chat is the native shape and responses is forwarded
+ * natively too (with store:false injected). Anthropic messages is not served
+ * (`/v1/messages` answers 404 unknown_url upstream).
+ *
+ * Specs (measured live 2026-10-13 and cross-checked against every twin
+ * provider carrying a spec): contextWindow is OVH's advertised value;
+ * maxTokens is deliberately the conservative FLOOR across twin providers —
+ * per-provider output caps for the same model range from 4K to 256K, and a
+ * cap that is too low never breaks a request while one that is too high lets
+ * a host ask for an output the provider refuses. OVH itself enforces only
+ * `context - prompt` (verified by binary search), so these are safe request
+ * budgets rather than a refusal boundary.
+ *
+ * Vision was probed with a generated solid-colour PNG sent as a data URL,
+ * twice with two different colours to defeat a memorised answer: the four
+ * Qwens and Mistral-Small-3.2 named the colour; Mistral-7B and Llama-3.3-70B
+ * answer HTTP 400 to an image part; gpt-oss-120b returns 200 while its own
+ * reasoning says it cannot see the image, so it is text-only. Reasoning is
+ * the presence of a populated `reasoning`/`reasoning_content` field on a
+ * non-tool answer.
+ */
+export const OVH_MODELS: ModelDef[] = [
  {
-  // Cline advertises this sixth free model only to its desktop client
-  // identity (see CLINE_CLIENT_HEADERS). Specs follow the vendored Cline
-  // catalog; maxTokens keeps the tighter chat value so a request can never
-  // overrun what the chat endpoint accepts.
-  id: "cline-free/kimi-k3",
-  name: "Kimi K3 [Cline]",
+  id: "ovh-free/gpt-oss-120b",
+  name: "GPT-OSS 120B [OVH]",
   reasoning: true,
-  contextWindow: 1_048_576,
-  maxTokens: 131_072,
- input: ["text", "image", "video"],
-  thinkingLevelMap: CLINE_FLASH_REASONING_MAP,
+  contextWindow: 131_072,
+  maxTokens: 32_768,
+  input: ["text"],
+  thinkingLevelMap: OVH_REASONING_MAP,
  },
  {
-  id: "cline-free/solar-pro4",
-  name: "Solar Pro4 [Cline]",
+  id: "ovh-free/gpt-oss-20b",
+  name: "GPT-OSS 20B [OVH]",
   reasoning: true,
-  contextWindow: 524_288,
-  maxTokens: 131_072,
+  contextWindow: 131_072,
+  maxTokens: 32_768,
   input: ["text"],
-  thinkingLevelMap: CLINE_REASONING_MAP,
+  thinkingLevelMap: OVH_REASONING_MAP,
+ },
+ {
+  id: "ovh-free/Qwen3.5-397B-A17B",
+  name: "Qwen3.5 397B A17B [OVH]",
+  reasoning: true,
+  contextWindow: 262_144,
+  maxTokens: 65_536,
+  input: ["text", "image"],
+  thinkingLevelMap: OVH_REASONING_MAP,
+ },
+ {
+  id: "ovh-free/Qwen3.5-9B",
+  name: "Qwen3.5 9B [OVH]",
+  reasoning: true,
+  contextWindow: 262_144,
+  maxTokens: 65_536,
+  input: ["text", "image"],
+  thinkingLevelMap: OVH_REASONING_MAP,
+ },
+ {
+  id: "ovh-free/Qwen3.6-27B",
+  name: "Qwen3.6 27B [OVH]",
+  reasoning: true,
+  contextWindow: 262_144,
+  maxTokens: 65_536,
+  input: ["text", "image"],
+  thinkingLevelMap: OVH_REASONING_MAP,
+ },
+ {
+  id: "ovh-free/Qwen3.8-27B",
+  name: "Qwen3.8 27B [OVH]",
+  reasoning: true,
+  contextWindow: 262_144,
+  maxTokens: 32_768,
+  input: ["text", "image"],
+  thinkingLevelMap: OVH_REASONING_MAP,
+ },
+ {
+  id: "ovh-free/Mistral-Small-3.2-24B-Instruct-2506",
+  name: "Mistral Small 3.2 24B [OVH]",
+  reasoning: false,
+  contextWindow: 131_072,
+  maxTokens: 16_384,
+  input: ["text", "image"],
+ },
+ {
+  id: "ovh-free/Mistral-7B-Instruct-v0.3",
+  name: "Mistral 7B Instruct v0.3 [OVH]",
+  reasoning: false,
+  contextWindow: 65_536,
+  maxTokens: 65_536,
+  input: ["text"],
+ },
+ {
+  id: "ovh-free/Meta-Llama-3_3-70B-Instruct",
+  name: "Meta Llama 3.3 70B Instruct [OVH]",
+  reasoning: false,
+  contextWindow: 131_072,
+  maxTokens: 16_384,
+  input: ["text"],
  },
 ];
+
+/**
+ * Resolve any OVH id to the bare id OVH knows on the wire. Canonicalises
+ * first, then strips: a short alias (`llama-3.3-70b`) must resolve to
+ * `ovh-free/Meta-Llama-3_3-70B-Instruct` before the prefix comes off, or it
+ * reaches OVH unrecognised and answers 404 `model_not_found` (live
+ * 2026-10-13, both for a prefixed id and for an alias sent verbatim). The
+ * remainder is case-sensitive, so it is returned unchanged.
+ */
+export function ovhUpstreamModelId(id: string): string {
+ const canonical = resolveCanonicalModelId(id);
+ return canonical.startsWith(OVH_MODEL_PREFIX)
+  ? canonical.slice(OVH_MODEL_PREFIX.length)
+  : canonical;
+}
 
 /**
  * Model ID Aliases — maps user-friendly / slash-free CLI IDs to canonical upstream model IDs.
@@ -505,6 +611,16 @@ export const MODEL_ALIASES: Record<string, string> = {
  "laguna-xs-2.1:free": "poolside/laguna-xs-2.1:free",
  "kilo-auto": "kilo-auto/free",
  "openrouter": "openrouter/free",
+// OVHcloud AI Endpoints — slash-free spellings of the `ovh-free/` ids.
+"gpt-oss-120b": "ovh-free/gpt-oss-120b",
+"gpt-oss-20b": "ovh-free/gpt-oss-20b",
+"qwen3.5-397b": "ovh-free/Qwen3.5-397B-A17B",
+"qwen3.5-9b": "ovh-free/Qwen3.5-9B",
+"qwen3.6-27b": "ovh-free/Qwen3.6-27B",
+"qwen3.8-27b": "ovh-free/Qwen3.8-27B",
+"mistral-small-3.2": "ovh-free/Mistral-Small-3.2-24B-Instruct-2506",
+"mistral-7b-v0.3": "ovh-free/Mistral-7B-Instruct-v0.3",
+"llama-3.3-70b": "ovh-free/Meta-Llama-3_3-70B-Instruct",
 };
 
 /**
@@ -533,10 +649,20 @@ export const CLINE_MODEL_IDS = new Set<string>([
   .filter(([_, target]) => CLINE_MODELS.some((cm) => cm.id === target))
   .map(([alias]) => alias),
 ]);
+
 /**
- * Combined list of all 30 static free models (canonical)
+ * Set of all OVH model IDs (including aliases) for fast lookup
  */
-export const ALL_MODELS: ModelDef[] = [...OPENCODE_MODELS, ...KILO_MODELS, ...CLINE_MODELS];
+export const OVH_MODEL_IDS = new Set<string>([
+ ...OVH_MODELS.map((m) => m.id),
+ ...Object.entries(MODEL_ALIASES)
+  .filter(([_, target]) => OVH_MODELS.some((om) => om.id === target))
+  .map(([alias]) => alias),
+]);
+/**
+ * Combined list of all 36 static free models (canonical)
+ */
+export const ALL_MODELS: ModelDef[] = [...OPENCODE_MODELS, ...KILO_MODELS, ...CLINE_MODELS, ...OVH_MODELS];
 
 /**
  * Map of model ID -> ModelDef
@@ -577,9 +703,18 @@ export function isClineModel(id: string): boolean {
 }
 
 /**
+ * Check if a model ID belongs to OVHcloud AI Endpoints
+ */
+export function isOvhModel(id: string): boolean {
+ const canonical = resolveCanonicalModelId(id);
+ return OVH_MODEL_IDS.has(id) || OVH_MODEL_IDS.has(canonical);
+}
+
+/**
  * Determine the upstream provider for a given model ID
  */
 export function getModelUpstream(id: string): Upstream {
  if (isClineModel(id)) return "cline";
+ if (isOvhModel(id)) return "ovh";
  return isKiloModel(id) ? "kilo" : "opencode";
 }
