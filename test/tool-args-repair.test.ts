@@ -25,6 +25,7 @@ import {
 } from "../src/opencode-fingerprint.ts";
 import {
 	createSseStreamCloakState,
+	flushBufferedToolArgs,
 	rewriteSseBlock,
 	type StreamCloakOptions,
 } from "../src/stream-pipe.ts";
@@ -296,14 +297,33 @@ test("tool lookup is case-insensitive", () => {
 	assert.notEqual(repairToolArguments("TODO", REPORTED, schemas), REPORTED);
 });
 
-test("tools without structured parameters are absent from the map", () => {
-	// `read` takes one string: there is nothing to repair, so requests that
-	// declare only such tools keep streaming byte-identically.
-	const scalarOnly = buildArgRepairSchemas([
-		{ type: "function", name: "read", description: "d", parameters: { type: "object", properties: { path: { type: "string" } } } },
+test("a scalar-only tool is still repairable, because prefix glue is not about shape", () => {
+	// Live 2026-10-14: OMP's `bash` declares only `command`/`timeout`/`cwd`/
+	// `pty` (reference/oh-my-pi tools/bash.ts:327), so a filter that kept only
+	// tools with an object or array property left the most-used tool out of the
+	// map. The model opened its next call by echoing the previous one's tail,
+	// the host rejected the payload, and the whole turn looped on it.
+	const bash = buildArgRepairSchemas([
+		{
+			type: "function",
+			name: "bash",
+			description: "Run a shell command",
+			parameters: {
+				type: "object",
+				properties: { i: { type: "string" }, command: { type: "string" }, timeout: { type: "number" }, cwd: { type: "string" } },
+				required: ["command"],
+			},
+		},
 	]);
-	assert.equal(scalarOnly.size, 0);
-	assert.equal(buildArgRepairSchemas([todoTool()]).size, 1);
+	assert.ok(bash.has("bash"), "bash must be repairable");
+	const glued = 'reelane-proxy"}{"i": "Confirming the files", "command": "git status --short", "cwd": "D:/repo"}';
+	assert.deepEqual(JSON.parse(repairToolArguments("bash", glued, bash)), {
+		i: "Confirming the files",
+		command: "git status --short",
+		cwd: "D:/repo",
+	});
+	// A tool with no declared parameters at all still has nothing to repair.
+	assert.equal(buildArgRepairSchemas([{ type: "function", name: "x", description: "d", parameters: { type: "string" } }]).size, 0);
 });
 
 test("value-level repair keeps reference identity when nothing changes", () => {
@@ -448,9 +468,11 @@ test("chat stream: fragmented arguments are buffered and repaired on the termina
 	assert.deepEqual(args.list.map((p) => p.phase), ["Research", "Synthesis"]);
 });
 
-test("chat stream: a tool with no repairable schema keeps streaming incrementally", () => {
-	// `read` takes one string, so it is absent from argSchemas: its arguments
-	// must flow through in the original delta, untouched.
+test("chat stream: a tool the caller never declared a schema for keeps streaming incrementally", () => {
+	// A tool absent from argSchemas (here: not one this request declared) must
+	// not be buffered — its arguments flow through on the original delta. Every
+	// tool that DOES declare parameters is now buffered, scalar-only ones
+	// included, because prefix glue reaches them too.
 	const args = '{"path":"a.txt"}';
 	const body = runBlocks(
 		[
@@ -485,4 +507,86 @@ test("messages stream: fragmented input is buffered and repaired on content_bloc
 	assert.ok(delta, "the repaired input is emitted before the block stops");
 	const args = JSON.parse(JSON.parse(delta!.slice(delta!.indexOf("data: ") + 6)).delta.partial_json) as { list: Array<{ phase: string }> };
 	assert.deepEqual(args.list.map((p) => p.phase), ["Research", "Synthesis"]);
+});
+
+test("a truncated number literal is refused, never rounded into a wrong value", () => {
+	// `timeout` is a declared number on both hosts' bash. Closing the object
+	// here would hand the host a value the model never finished writing.
+	const bashSchemas = buildArgRepairSchemas([
+		{
+			type: "function",
+			name: "bash",
+			description: "Run a shell command",
+			parameters: { type: "object", properties: { command: { type: "string" }, timeout: { type: "number" } }, required: ["command"] },
+		},
+	]);
+	for (const cut of [
+		'{"async":true}{"command":"ls","timeout":18',
+		'{"async":true}{"command":"ls","timeout":1',
+		'{"async":true}{"command":"ls","timeout":1.',
+		'{"async":true}{"command":"ls","timeout":1e',
+		'{"command":"ls","timeout":18',
+	]) {
+		assert.equal(repairToolArguments("bash", cut, bashSchemas), cut, `${cut} must ride through untouched`);
+	}
+	// A payload whose only fault is the prefix still repairs.
+	const glued = '{"async":true}{"command":"ls","timeout":180}';
+	assert.equal(repairToolArguments("bash", glued, bashSchemas), '{"command":"ls","timeout":180}');
+});
+
+test("an inner object is never promoted over the wrapper that declares it", () => {
+	// The salvage must not hand back `{"a":1}` for `{"opts":{"a":1}`: the
+	// declared `opts` key would vanish and the host would see a shape its own
+	// schema never described.
+	const cfgSchemas = buildArgRepairSchemas([
+		{
+			type: "function",
+			name: "cfg",
+			description: "Configure",
+			parameters: { type: "object", properties: { opts: { type: "object", properties: { a: { type: "number" } } } } },
+		},
+	]);
+	const cut = '{"opts":{"a":1}';
+	assert.equal(repairToolArguments("cfg", cut, cfgSchemas), cut, "the inner object must not replace the call");
+	// With a prefix in front the same call still recovers whole.
+	assert.equal(repairToolArguments("cfg", `garbage${cut}`, cfgSchemas), '{"opts":{"a":1}}');
+});
+
+test("chat stream: arguments survive a stream that never sends finish_reason", () => {
+	// The buffered fragments are released on the terminal chunk; a cut stream
+	// never sends one, so without the end-of-stream flush the client received a
+	// tool call whose arguments had been deleted and never re-emitted.
+	const body = runBlocks(
+		[
+			`data: ${JSON.stringify({ choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: "c1", type: "function", function: { name: "todo", arguments: REPORTED } }] } }] })}`,
+		],
+		"/v1/chat/completions",
+	);
+	assert.ok(!body.includes("arguments"), "the fragment stays buffered until the call is whole");
+	const state = createSseStreamCloakState();
+	const cloak = streamCloak("/v1/chat/completions");
+	rewriteSseBlock(`data: ${JSON.stringify({ choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: "c1", type: "function", function: { name: "todo", arguments: REPORTED } }] } }] })}`, state, cloak);
+	const flushed = flushBufferedToolArgs(state, cloak);
+	assert.ok(flushed, "the end-of-stream flush must emit the buffered call");
+	const call = JSON.parse(flushed!.slice(flushed!.indexOf("data: ") + 6)).choices[0].delta.tool_calls[0] as { function: { name: string; arguments: string } };
+	assert.equal(call.function.name, "todo");
+	const args = JSON.parse(call.function.arguments) as { list: Array<{ phase: string }> };
+	assert.deepEqual(args.list.map((p) => p.phase), ["Research", "Synthesis"]);
+	assert.equal(flushBufferedToolArgs(state, cloak), null, "the flush is one-shot");
+});
+
+test("messages stream: arguments survive a block that never stops", () => {
+	const state = createSseStreamCloakState();
+	const cloak = streamCloak("/v1/messages");
+	rewriteSseBlock(`data: ${JSON.stringify({ type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "tu_1", name: "todo" } })}`, state, cloak);
+	rewriteSseBlock(`data: ${JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: REPORTED } })}`, state, cloak);
+	// No content_block_stop: the recovered delta must still precede the events
+	// that close the message.
+	const closing = rewriteSseBlock(`data: ${JSON.stringify({ type: "message_stop" })}`, state, cloak);
+	assert.ok(closing, "message_stop is forwarded");
+	const blocks = closing!.split("\n\n").filter((b) => b.includes("input_json_delta"));
+	assert.equal(blocks.length, 1, "the buffered input is emitted exactly once");
+	const args = JSON.parse(JSON.parse(blocks[0].slice(blocks[0].indexOf("data: ") + 6)).delta.partial_json) as { list: Array<{ phase: string }> };
+	assert.deepEqual(args.list.map((p) => p.phase), ["Research", "Synthesis"]);
+	assert.ok(closing!.indexOf("input_json_delta") < closing!.indexOf("message_stop"), "the recovered input precedes message_stop");
 });

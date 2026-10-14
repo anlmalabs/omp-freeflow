@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.36.1
+
+### Patch Changes
+
+- Fix tool calls being rejected as invalid JSON on every model, and tool names coming back under a name the host never registered.
+
+  - A tool whose arguments arrived carrying the tail of the previous call is now repaired for **every** tool, not only tools declaring a nested object or array. The most-used tool, the shell command tool, declares nothing but scalars, so it was never repaired at all — the call was rejected and the turn looped on the same broken payload.
+  - Buffered tool arguments are released when a stream ends without its normal ending event, instead of being dropped: a truncated stream used to deliver a call with no arguments at all.
+  - The tool-name restore now runs on the Cline and OVH lanes too. Those lanes send a renamed tool upstream but never took it back, so a client received a call for a tool it does not have.
+  - A caller that declares both file-pattern and semantic-search tools now keeps both. The two share a name across hosts but are different tools, and collapsing them handed the model one tool under the other's shape.
+  - A truncated number is refused rather than completed, and an inner object is never promoted over the wrapper that declares it.
+  - A non-streaming answer from the Kilo lane is repaired like a streamed one.
+  - The free tier is the only lane that renames a tool now. The other lanes carry
+    the caller's own names in both directions, so the host dispatches natively
+    instead of waiting for a name that never comes back.
+  - Tools that declare an optional value as "value or nothing" are repaired
+    again. Both hosts describe optional settings that way when a tool is declared
+    strictly, and reading that as "always send it" silently switched repair off
+    for the shell command tool — the one that matters most.
+  - A model answering an optional setting with the word "none" as text, instead of
+    leaving it empty, is now corrected rather than rejected. Affects roughly one
+    model in nine.
+  - A streamed Anthropic-format answer is now repaired and mapped like the other
+    two formats. It was forwarded untouched.
+  - A stream that ends without an answer says so, instead of reporting an empty
+    successful one.
+
 ## 1.36.0
 
 ### Minor Changes

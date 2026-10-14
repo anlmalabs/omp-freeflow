@@ -53,7 +53,17 @@ export const PI_TOOL_NAMES = [
  "ls",
 ] as const;
 
-/** OMP host built-ins: BUILTIN_TOOL_NAMES in reference/oh-my-pi packages/coding-agent/src/tools/builtin-names.ts plus browser/computer */
+/**
+ * OMP host built-ins: BUILTIN_TOOL_NAMES in
+ * reference/oh-my-pi/packages/coding-agent/src/tools/builtin-names.ts, plus
+ * browser/computer (real top-level tools in the same checkout) and `hub`.
+ *
+ * `find` here is OMP's semantic search (reference/oh-my-pi
+ * tools/jfind/index.ts:54), NOT Pi's file finder: they are different tools
+ * with different schemas, and both are declared together whenever the session
+ * enables it. That is why the translator renames `find` to `glob` only when the
+ * caller left the `glob` slot empty — see translateToolsForPath.
+ */
 export const OMP_TOOL_NAMES = [
  "read",
  "bash",
@@ -62,15 +72,20 @@ export const OMP_TOOL_NAMES = [
  "ast_edit",
  "ask",
  "debug",
+ "ida",
  "eval",
  "github",
  "glob",
  "grep",
+ "find",
  "lsp",
  "checkpoint",
  "rewind",
+ "context_notes",
+ "new_context",
  "security_scan",
  "task",
+ "wait",
  "hub",
  "todo",
  "web_search",
@@ -180,13 +195,20 @@ export const OMP_CALLER_MARKERS = ["ask", "task", "todo", "hub", "lsp"] as const
 
 /**
  * True when a lowercased caller-tool name set looks like OMP: any of
- * ask/task/todo/hub/lsp present, or glob present without find (Pi sends find,
- * OMP sends glob). Case-insensitive; pass already-lowercased names.
+ * ask/task/todo/hub/lsp present, or `glob` present at all.
+ *
+ * `glob` alone is the discriminator because Pi has no such tool (its file
+ * finder is `find`, reference/pi core/tools/index.ts:95) while OMP declares
+ * both. The old test was "glob without find", which assumed `find` was
+ * Pi-exclusive; OMP ships a semantic `find` too (reference/oh-my-pi
+ * tools/jfind/index.ts:54), so an OMP read-only session carrying glob+find was
+ * classified as Pi and its fingerprint slots came back as non-executable
+ * placeholders. Case-insensitive; pass already-lowercased names.
  */
 export function isOmpLikeCaller(lowerNames: Iterable<string>): boolean {
  const set = lowerNames instanceof Set ? lowerNames : new Set(lowerNames);
  for (const m of OMP_CALLER_MARKERS) if (set.has(m)) return true;
- return set.has("glob") && !set.has("find");
+ return set.has("glob");
 }
 
 export interface CanonicalTool {
@@ -385,8 +407,14 @@ export function sanitizeUpstreamToolName(name: string, taken: ReadonlySet<string
 }
 /** Inspect the original caller tools (pre-translate) for the rewrite cases. */
 export function buildFindGlobRestore(callerTools: unknown[]): FindGlobRestore {
-	let sawFind = false;
-	let sawGlob = false;
+	// Same rule as translateToolsForPath: the find->glob rename fires only when
+	// the caller left the `glob` slot empty. OMP declares both real tools, so
+	// there the rename must not happen and `find` must keep its own name.
+	const callerDeclaresGlob = callerTools.some((tool) => {
+		const canon = canonicalizeTool(tool);
+		return canon !== null && canon.name.trim().toLowerCase() === "glob";
+	});
+	const nameFor = (name: string): string => (callerDeclaresGlob ? name.trim() : upstreamToolNameFor(name));
 	const renamed: Record<string, string> = {};
 	// Same first-seen-wins order and case rules as translateToolsForPath, so
 	// the recorded map keys match the names that actually reach upstream.
@@ -395,25 +423,28 @@ export function buildFindGlobRestore(callerTools: unknown[]): FindGlobRestore {
 		const canon = canonicalizeTool(tool);
 		if (!canon) continue;
 		const callerName = canon.name;
-		if (isFindToolName(callerName)) sawFind = true;
-		else if (callerName.trim().toLowerCase() === "glob") sawGlob = true;
+		const upstreamName = nameFor(callerName);
 		// Mirrors translateToolsForPath: dedup on the lowercased
 		// pre-sanitization name (a collapsed duplicate never reaches upstream),
 		// then sanitize with the caller's casing intact.
-		const dedupKey = upstreamToolNameFor(callerName).toLowerCase();
+		const dedupKey = upstreamName.toLowerCase();
 		if (seen.has(dedupKey)) continue;
 		seen.add(dedupKey);
-		const sanitized = sanitizeUpstreamToolName(upstreamToolNameFor(callerName), seen);
+		const sanitized = sanitizeUpstreamToolName(upstreamName, seen);
 		if (sanitized.toLowerCase() !== dedupKey) seen.add(sanitized.toLowerCase());
 		// Only character-folding rewrites belong in the sanitized map. The
-		// find->glob rename is a collision case with its own flag: when the
-		// caller also sent `glob`, upstream `glob` really is the caller's glob,
-		// so recording it here would misroute a genuine call.
+		// find->glob rename is a single-name fallback, so a name that came in
+		// as `find` must not be recorded here: upstream `glob` may be the
+		// caller's own glob.
 		if (sanitized !== callerName && !isFindToolName(callerName)) {
 			renamed[sanitized.toLowerCase()] = callerName;
 		}
 	}
-	const restored: FindGlobRestore = { renamedFindToGlob: sawFind && !sawGlob, renamed };
+	const sawFind = callerTools.some((tool) => {
+		const canon = canonicalizeTool(tool);
+		return canon !== null && isFindToolName(canon.name);
+	});
+	const restored: FindGlobRestore = { renamedFindToGlob: sawFind && !callerDeclaresGlob, renamed };
 	return restored;
 }
 /**
@@ -489,22 +520,46 @@ function carryExtraFields(
  }
 }
 /**
- * Reshape a caller tool array for the target path. Tools already in the
- * target shape pass through verbatim (identical reference, every extra field
- * intact) except Pi `find`, which is renamed to `glob` even when the shape
- * already matches (new object, params/description verbatim). Function tools
- * in another shape are converted, carrying `description`/`parameters`/`strict`
- * verbatim plus every other top-level caller field except the
- * wire-shape-forbidden keys (`type`/`function` wrapper, `name`, `description`,
- * `parameters`/`input_schema`), which are remapped per target shape. Never
- * injects `additionalProperties`. Every other entry passes through verbatim.
- * Duplicates collapse first-seen-wins on the lowercased upstream name, so
- * `Bash` never duplicates `bash` and `find` collapses with `glob`.
- * Re-translating translated output adds zero tools. Never returns null entries.
+ * Reshape a caller tool array for the target path. Tools already in the target
+ * shape pass through verbatim (identical reference, every extra field intact).
+ * Function tools in another shape are converted, carrying
+ * `description`/`parameters`/`strict` verbatim plus every other top-level
+ * caller field except the wire-shape-forbidden keys (`type`/`function`
+ * wrapper, `name`, `description`, `parameters`/`input_schema`), which are
+ * remapped per target shape. Never injects `additionalProperties`. Every other
+ * entry passes through verbatim. Duplicates collapse first-seen-wins on the
+ * lowercased upstream name, so `Bash` never duplicates `bash`. Re-translating
+ * translated output adds zero tools. Never returns null entries.
  * `tool_choice` is never imposed here; use the retarget helpers to carry it.
+ *
+ * Names ride the caller's own unless `forFingerprint` is set — that flag exists
+ * for the OpenCode free tier alone, whose gate expects the sextet name `glob`
+ * and therefore needs Pi's `find` renamed into it. On every other lane the
+ * rename is pure loss: the upstream would have accepted `find`, and the host
+ * gets `find` back and dispatches it natively.
  */
-export function translateToolsForPath(tools: unknown[], pathname: string): Record<string, unknown>[] {
+export function translateToolsForPath(tools: unknown[], pathname: string, opts?: { forFingerprint?: boolean }): Record<string, unknown>[] {
  const api = apiForPathname(pathname);
+ // Only the OpenCode free tier needs a tool renamed: its gate looks for a
+ // sextet whose `glob` slot Pi's `find` can fill. Every other upstream accepts
+ // the caller's own names, so on those lanes the name rides verbatim in BOTH
+ // directions and the host dispatches it natively — nothing to translate, and
+ // nothing to restore.
+ //
+ // Even on the fingerprint lane the rename is skipped when the caller declared
+ // `glob` itself: OMP declares both `glob` (file patterns) and `find`
+ // (semantic search, reference/oh-my-pi tools/jfind/index.ts:54), and renaming
+ // there would collapse two real tools into one under the other's schema.
+ let callerDeclaresGlob = false;
+ for (const tool of tools) {
+  const canon = canonicalizeTool(tool);
+  if (canon && canon.name.trim().toLowerCase() === "glob") {
+   callerDeclaresGlob = true;
+   break;
+  }
+ }
+ const renameFind = opts?.forFingerprint === true && !callerDeclaresGlob;
+ const upstreamNameFor = (name: string): string => (renameFind ? upstreamToolNameFor(name) : name.trim());
  const seen = new Set<string>();
  const out: Record<string, unknown>[] = [];
  for (const tool of tools) {
@@ -517,15 +572,16 @@ export function translateToolsForPath(tools: unknown[], pathname: string): Recor
    continue;
   }
  // Duplicate collapse stays first-seen-wins on the lowercased upstream name
- // (`Bash` never duplicates `bash`, `find` collapses with `glob`) and runs on
- // the pre-sanitization name: the emitted name keeps the caller's casing, and
- // the sanitizer only ever folds characters the upstream shape forbids.
- const dedupKey = upstreamToolNameFor(canon.name).toLowerCase();
+ // (`Bash` never duplicates `bash`, a Pi `find` still collapses with `glob`)
+ // and runs on the pre-sanitization name: the emitted name keeps the caller's
+ // casing, and the sanitizer only ever folds characters the upstream shape
+ // forbids.
+ const dedupKey = upstreamNameFor(canon.name).toLowerCase();
  if (seen.has(dedupKey)) continue;
  seen.add(dedupKey);
  // The find->glob rename and the name sanitization share one upstream name,
  // so a caller tool needing either is emitted under a single new name.
- const upstreamName = sanitizeUpstreamToolName(upstreamToolNameFor(canon.name), seen);
+ const upstreamName = sanitizeUpstreamToolName(upstreamNameFor(canon.name), seen);
  if (upstreamName.toLowerCase() !== dedupKey) seen.add(upstreamName.toLowerCase());
  const needsRename = upstreamName !== canon.name;
  if (!needsRename && alreadyTargetShape(rec, api)) {
@@ -535,60 +591,17 @@ export function translateToolsForPath(tools: unknown[], pathname: string): Recor
  const renamed: CanonicalTool = needsRename
   ? { ...canon, name: upstreamName }
   : canon;
-  const converted =
-   api === "responses"
-    ? toResponsesTool(renamed)
-    : api === "messages"
-     ? toAnthropicTool(renamed)
-     : toChatTool(renamed);
-  carryExtraFields(rec, converted);
-  out.push(converted);
+ const converted =
+  api === "responses"
+   ? toResponsesTool(renamed)
+   : api === "messages"
+    ? toAnthropicTool(renamed)
+    : toChatTool(renamed);
+ carryExtraFields(rec, converted);
+ out.push(converted);
  }
  return out;
 }
-/**
- * Inject the missing fingerprint tools into an already-translated tool array,
- * using the target path's shape. Idempotent and case-insensitive: `Bash`
- * satisfies `bash` and is never duplicated.
- * OMP-like callers (explicit `ompLike`, else auto-detected from the array via
- * {@link isOmpLikeCaller}) get REAL minimal executable definitions from
- * {@link OMP_FINGERPRINT_DEFS}; everyone else (Pi) keeps the empty COMPAT
- * placeholders. `edit` is always the COMPAT placeholder, even for OMP-like
- * callers — no static edit def executes on either host, so it must stay
- * cloaked downstream. Re-injecting injected output adds zero tools.
- */
-export function injectFingerprintTools(
- tools: Record<string, unknown>[],
- pathname: string,
- ompLike?: boolean,
-): Record<string, unknown>[] {
- const present = new Set<string>();
- for (const tool of tools) {
-  const canon = canonicalizeTool(tool);
-  if (canon) present.add(canon.name.trim().toLowerCase());
- }
- const omp = ompLike ?? isOmpLikeCaller(present);
- const api = apiForPathname(pathname);
- for (const name of OPENCODE_FINGERPRINT_TOOLS) {
-  if (present.has(name.toLowerCase())) continue;
-  const def = omp && name !== "edit" ? OMP_FINGERPRINT_DEFS[name] : null;
-  const canon: CanonicalTool = {
-   name,
-   description: def ? def.description : COMPAT_TOOL_DESCRIPTION,
-   parameters: def ? { ...(def.parameters as Record<string, unknown>) } : { type: "object", properties: {} },
-  };
-  tools.push(
-   api === "responses"
-    ? toResponsesTool(canon)
-    : api === "messages"
-     ? toAnthropicTool(canon)
-     : toChatTool(canon),
-  );
-  present.add(name.toLowerCase());
- }
- return tools;
-}
-
 /**
  * Responses <-> Chat body translation. Cline serves chat completions only, so
  * the responses body is reshaped to chat before the Cline branch sends it,
@@ -675,7 +688,10 @@ export function chatBodyFromResponsesBody(body: Record<string, unknown>): Record
  out.messages = messages;
  if (Array.isArray(body.tools)) out.tools = translateToolsForPath(body.tools, "/v1/chat/completions");
  if (body.tool_choice !== undefined) out.tool_choice = body.tool_choice;
- for (const key of ["temperature", "top_p", "max_tokens", "max_completion_tokens", "stop", "presence_penalty", "frequency_penalty", "seed", "user", "parallel_tool_calls", "response_format"] as const) {
+ // `max_output_tokens` is the Responses-native cap and is what a host actually
+ // sets on this path; without it here the cap silently vanished on the
+ // chat-only lanes and the model answered at its own default length.
+ for (const key of ["temperature", "top_p", "max_tokens", "max_completion_tokens", "max_output_tokens", "stop", "presence_penalty", "frequency_penalty", "seed", "user", "parallel_tool_calls", "response_format"] as const) {
   if (body[key] !== undefined) out[key] = body[key];
  }
  return out;

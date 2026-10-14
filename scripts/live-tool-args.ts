@@ -16,7 +16,8 @@
  *   FF_TIMEOUT_MS=N  per-request budget (default 90000)
  */
 import { startProxy } from "../src/proxy.ts";
-import { ALL_HOST_TOOL_NAMES, injectFingerprintTools, translateToolsForPath } from "../src/tool-translation.ts";
+import { ALL_HOST_TOOL_NAMES, translateToolsForPath } from "../src/tool-translation.ts";
+import { ensureChatFingerprintTools, ensureMessagesFingerprintTools, ensureResponsesFingerprintTools } from "../src/opencode-fingerprint.ts";
 import { MODEL_MAP } from "../src/models.ts";
 
 const PORT = 29483;
@@ -216,7 +217,13 @@ try {
      { type: "function", name: "todo", description: TODO_DESC, parameters: TODO_PARAMS },
     ]
    : [{ type: "function", name: "todo", description: TODO_DESC, parameters: TODO_PARAMS }];
-  const tools = injectFingerprintTools(translateToolsForPath(requested, endpoint), endpoint);
+  // Fingerprint injection goes through the SAME ensure* functions the proxy
+  // uses, so this probe measures the live path rather than a twin of it.
+  const toolBody: Record<string, unknown> = { tools: translateToolsForPath(requested, endpoint) };
+  if (endpoint.endsWith("/responses")) ensureResponsesFingerprintTools(toolBody);
+  else if (endpoint.endsWith("/messages")) ensureMessagesFingerprintTools(toolBody);
+  else ensureChatFingerprintTools(toolBody);
+  const tools = toolBody.tools as Record<string, unknown>[];
   // Zen accepts only tool_choice "auto", so the prompt alone must elicit the call.
   const payload =
    endpoint === "/v1/chat/completions"

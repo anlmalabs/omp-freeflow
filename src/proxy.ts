@@ -35,11 +35,12 @@ import {
 } from "./config.ts";
 
 import {
- convertSseToJson,
- enforceOpencodeFingerprint,
- sseToChatCompletionJson,
- type CaseRestoreMap,
- type FindGlobRestore,
+	convertSseToJson,
+	enforceOpencodeFingerprint,
+	repairJsonToolArguments,
+	sseToChatCompletionJson,
+	type CaseRestoreMap,
+	type FindGlobRestore,
 } from "./opencode-fingerprint.ts";
 import { isDebugEnabled, log } from "./logger.ts";
 import { getModelUpstream, isClineModel, isOvhModel, KILO_MODEL_IDS, MODEL_MAP, ovhUpstreamModelId, resolveCanonicalModelId } from "./models.ts";
@@ -47,10 +48,12 @@ import { ClineAuthError, refreshClineToken, toApiKey } from "./cline-device-auth
 import { rollChat } from "./cline-accounts.ts";
 import { fetchWithSystemCA } from "./system-ca-fetch.ts";
 import {
- chatResponsesJsonFromChatCompletion,
- chatResponsesSseFromChatCompletion,
- chatBodyFromResponsesBody,
- translateToolsForPath,
+	buildFindGlobRestore,
+	chatBodyFromResponsesBody,
+	chatResponsesJsonFromChatCompletion,
+	chatResponsesSseFromChatCompletion,
+	restoreToolNameForCaller,
+	translateToolsForPath,
 } from "./tool-translation.ts";
 import { buildArgRepairSchemas } from "./tool-args.ts";
 // normalize removed — host pi-ai already normalizes thinking/reasoning before proxy
@@ -271,6 +274,10 @@ async function handleClineRequest(opts: {
  // Cline bypasses the fingerprint, but its arguments still malform the same
  // way: capture the caller's own schemas before translation for repair.
  const argSchemas = buildArgRepairSchemas(Array.isArray(parsedBody.tools) ? parsedBody.tools : []);
+ // Translation renames the caller's `find` to `glob` upstream and folds any
+ // name the upstream shape forbids; without this map the answer returns under
+ // a name Pi never registered.
+ const findGlob = buildFindGlobRestore(Array.isArray(parsedBody.tools) ? parsedBody.tools : []);
  chatBody.stream = true;
  let upstreamRes: Response;
  let limitHint: ClineLimitHint | undefined;
@@ -334,8 +341,8 @@ async function handleClineRequest(opts: {
    req,
    reqId,
    "direct",
-   argSchemas.size > 0
-    ? { callerHadTools: true, argSchemas, pathname: "/v1/chat/completions" }
+   findGlob.renamedFindToGlob || findGlob.renamed !== undefined || argSchemas.size > 0
+    ? { callerHadTools: true, argSchemas, findGlob, pathname: "/v1/chat/completions" }
     : undefined,
   );
   return;
@@ -352,7 +359,7 @@ async function handleClineRequest(opts: {
   return;
  }
  if (!responsesRequest) {
-  const data = convertSseToJson(sseText, pathname, true, undefined, undefined, undefined, argSchemas);
+ const data = convertSseToJson(sseText, pathname, true, undefined, findGlob, undefined, argSchemas);
   if (!res.headersSent) {
    res.writeHead(upstreamRes.status, { "content-type": "application/json" });
    res.end(data);
@@ -361,7 +368,7 @@ async function handleClineRequest(opts: {
   }
   return;
  }
- const chat = sseToChatCompletionJson(sseText, true, undefined, undefined, undefined, argSchemas);
+ const chat = sseToChatCompletionJson(sseText, true, undefined, findGlob, undefined, argSchemas);
  const resp = chatResponsesJsonFromChatCompletion(chat, model);
  if (clientRequestedStream) {
   if (!res.headersSent) {
@@ -423,6 +430,10 @@ async function handleOvhRequest(opts: {
  // Bypassing the fingerprint does not exempt OVH from malformed tool
  // arguments: capture the caller's own schemas before translation for repair.
  const argSchemas = buildArgRepairSchemas(Array.isArray(parsedBody.tools) ? parsedBody.tools : []);
+ // Translation renames the caller's `find` to `glob` upstream and folds any
+ // name the upstream shape forbids; without this map the answer returns under
+ // a name Pi never registered.
+ const findGlob = buildFindGlobRestore(Array.isArray(parsedBody.tools) ? parsedBody.tools : []);
  chatBody.stream = true;
  // Header-wait timeout + client-disconnect abort, cleared once headers arrive
  // so a long stream is not killed at the timeout ceiling.
@@ -501,8 +512,8 @@ async function handleOvhRequest(opts: {
    req,
    reqId,
    "direct",
-   argSchemas.size > 0
-    ? { callerHadTools: true, argSchemas, pathname: "/v1/chat/completions" }
+   findGlob.renamedFindToGlob || findGlob.renamed !== undefined || argSchemas.size > 0
+    ? { callerHadTools: true, argSchemas, findGlob, pathname: "/v1/chat/completions" }
     : undefined,
   );
   return;
@@ -519,7 +530,7 @@ async function handleOvhRequest(opts: {
   return;
  }
  if (!responsesRequest) {
-  const data = convertSseToJson(sseText, pathname, true, undefined, undefined, undefined, argSchemas);
+ const data = convertSseToJson(sseText, pathname, true, undefined, findGlob, undefined, argSchemas);
   if (!res.headersSent) {
    res.writeHead(upstreamRes.status, { "content-type": "application/json" });
    res.end(data);
@@ -528,7 +539,7 @@ async function handleOvhRequest(opts: {
   }
   return;
  }
- const chat = sseToChatCompletionJson(sseText, true, undefined, undefined, undefined, argSchemas);
+ const chat = sseToChatCompletionJson(sseText, true, undefined, findGlob, undefined, argSchemas);
  const resp = chatResponsesJsonFromChatCompletion(chat, requestedModel);
  if (clientRequestedStream) {
   if (!res.headersSent) {
@@ -1382,7 +1393,11 @@ export function startProxy(
      } else {
       let rawText = await response.text();
       if (response.ok && kiloArgSchemas.size > 0) {
+       // Kilo passes `stream` through verbatim, so a non-streaming caller gets
+       // a plain JSON body: the SSE aggregator is a no-op on it, and the JSON
+       // repair is what actually applies here.
        rawText = convertSseToJson(rawText, target.pathname, true, undefined, undefined, undefined, kiloArgSchemas);
+       rawText = repairJsonToolArguments(rawText, target.pathname, kiloArgSchemas);
       }
       const data = withRateLimitHint(response.status, rawText);
       const ct = response.headers.get("content-type") || "application/json";
