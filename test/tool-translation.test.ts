@@ -21,7 +21,6 @@ import {
 	buildFindGlobRestore,
 	canonicalizeTool,
 	chatBodyFromResponsesBody,
-	injectFingerprintTools,
 	restoreToolChoiceForCaller,
 	restoreToolNameForCaller,
 	retargetToolChoiceForUpstream,
@@ -32,6 +31,7 @@ import {
 	translateToolsForPath,
 	upstreamToolNameFor,
 } from "../src/tool-translation.ts";
+import { withFingerprintTools } from "./_fingerprint.ts";
 
 const PATHS = ["/v1/chat/completions", "/v1/responses", "/v1/messages"] as const;
 test("translateToolsForPath: MCP, custom, and device tools translate like built-ins", () => {
@@ -72,10 +72,20 @@ test("translateToolsForPath: same-shape tools pass through verbatim, strict surv
 	assert.equal(kept, strictResponses);
 });
 
-test("inventories: Pi exposes 8 tools, OMP 28 built-ins plus 3 hidden", () => {
+test("inventories: Pi exposes 8 tools, OMP's built-ins plus hidden, both hosts list find", () => {
 	assert.equal(PI_TOOL_NAMES.length, 8);
-	assert.equal(OMP_TOOL_NAMES.length, 28);
 	assert.equal(OMP_HIDDEN_TOOL_NAMES.length, 3);
+	// OMP's inventory tracks BUILTIN_TOOL_NAMES in the reference checkout plus
+	// browser/computer/hub, so assert membership of the names that decide
+	// behaviour rather than a count that drifts with every host release.
+	for (const builtIn of ["ida", "context_notes", "new_context", "wait", "find", "glob"]) {
+		assert.ok((OMP_TOOL_NAMES as readonly string[]).includes(builtIn), `OMP built-in ${builtIn}`);
+	}
+	// `find` is Pi's file finder and OMP's semantic search: same name, different
+	// tools, so the translator must keep both.
+	assert.ok((PI_TOOL_NAMES as readonly string[]).includes("find"));
+	assert.ok((OMP_TOOL_NAMES as readonly string[]).includes("find"));
+	assert.ok(!(PI_TOOL_NAMES as readonly string[]).includes("glob"), "Pi has no glob tool");
 	assert.deepEqual([...OMP_CUSTOM_TOOL_NAMES], ["generate_image", "tts"]);
 	assert.deepEqual([...OPENCODE_FINGERPRINT_TOOLS], ["bash", "glob", "grep", "read", "edit", "write"]);
 	for (const shared of ["read", "bash", "edit", "write", "grep"]) {
@@ -210,14 +220,14 @@ test("translateToolsForPath: non-function tools pass through verbatim, duplicate
 	assert.equal(out[1].name, "read");
 });
 
-test("injectFingerprintTools: completes the placeholder set in every target shape", () => {
-	const chat = injectFingerprintTools([], "/v1/chat/completions");
+test("fingerprint injection: completes the placeholder set in every target shape", () => {
+	const chat = withFingerprintTools([], "/v1/chat/completions");
 	assert.equal(chat.length, 6);
 	assert.ok(chat.every((t) => "function" in t));
-	const responses = injectFingerprintTools([], "/v1/responses");
+	const responses = withFingerprintTools([], "/v1/responses");
 	assert.equal(responses.length, 6);
 	assert.ok(responses.every((t) => t.type === "function" && typeof t.name === "string"));
-	const messages = injectFingerprintTools([], "/v1/messages");
+	const messages = withFingerprintTools([], "/v1/messages");
 	assert.equal(messages.length, 6);
 	assert.ok(messages.every((t) => "input_schema" in t && !("function" in t)));
 });
@@ -438,8 +448,8 @@ test("translateToolsForPath: Pi find renames to glob on all shapes, OMP glob unt
 	};
 	for (const style of styles) {
 		for (const path of PATHS) {
-			const [out] = translateToolsForPath([makeFind(style)], path);
-			assert.equal(upstreamNameOf(out), "glob", `${style} -> ${path}: find becomes glob`);
+			const [out] = translateToolsForPath([makeFind(style)], path, { forFingerprint: true });
+			assert.equal(upstreamNameOf(out), "glob", `${style} -> ${path}: the fingerprint lane renames find to glob`);
 			assert.equal(upstreamDescOf(out), "f", `${style} -> ${path}: find description verbatim`);
 			assert.deepEqual(upstreamParamsOf(out), findParams, `${style} -> ${path}: find params verbatim`);
 		}
@@ -489,15 +499,21 @@ test("translateToolsForPath: dup collapse case-insensitive, second translate add
 		const again = translateToolsForPath(out, path);
 		assert.equal(again.length, 1, `${path}: idempotent, second translate adds zero`);
 	}
+	// OMP declares both: `find` keeps its own name so the model sees two real
+	// tools instead of one under the other's schema.
 	const findGlob = [
 		{ type: "function", name: "find", description: "f", parameters: { type: "object" } },
 		{ type: "function", name: "glob", description: "g", parameters: { type: "object" } },
 	];
-	const collapsed = translateToolsForPath(findGlob, "/v1/responses");
-	assert.equal(collapsed.length, 1, "find collapses with glob upstream");
-	assert.equal((collapsed[0] as Record<string, unknown>).name, "glob");
-	const reCollapsed = translateToolsForPath(collapsed, "/v1/responses");
-	assert.equal(reCollapsed.length, 1, "re-translate adds zero");
+	const kept = translateToolsForPath(findGlob, "/v1/responses");
+	assert.deepEqual(kept.map(upstreamNameOf), ["find", "glob"], "find survives beside a declared glob");
+	assert.equal(buildFindGlobRestore(findGlob).renamedFindToGlob, false, "no rename to undo");
+	// Pi declares `find` alone: it must still fill the sextet's glob slot.
+	const piFind = translateToolsForPath([findGlob[0]], "/v1/responses", { forFingerprint: true });
+	assert.deepEqual(piFind.map(upstreamNameOf), ["glob"], "a lone Pi find rides upstream as glob");
+	assert.equal(buildFindGlobRestore([findGlob[0]]).renamedFindToGlob, true);
+	const reTranslated = translateToolsForPath(kept, "/v1/responses");
+	assert.deepEqual(reTranslated.map(upstreamNameOf), ["find", "glob"], "re-translate adds zero");
 });
 test("translateToolsForPath: hidden plus full host sets survive every path", () => {
 	const hidden = ["yield", "goal", "think"];
@@ -509,10 +525,11 @@ test("translateToolsForPath: hidden plus full host sets survive every path", () 
 	for (const path of PATHS) {
 		const combined = [...OMP_TOOL_NAMES, ...OMP_HIDDEN_TOOL_NAMES, ...OMP_CUSTOM_TOOL_NAMES, ...PI_TOOL_NAMES].map((name) => ({ type: "function", name, description: `${name} tool`, parameters: { type: "object" } }));
 		const out = translateToolsForPath(combined, path);
-		assert.equal(out.length, 35, `${path}: 41 caller names collapse shared dupes plus find+glob to 35 upstream`);
+		const declared = new Set(combined.map((t) => String(t.name).toLowerCase()));
 		const names = out.map(upstreamNameOf);
-		assert.ok(!names.includes("find"), `${path}: find never sent upstream`);
-		assert.ok(names.includes("glob"), `${path}: glob present`);
+		assert.equal(new Set(names.map((n) => n.toLowerCase())).size, names.length, `${path}: no duplicate upstream names`);
+		for (const name of declared) assert.ok(names.includes(name), `${path}: keeps ${name}`);
+		assert.equal(out.length, declared.size, `${path}: nothing dropped, nothing invented`);
 		assert.ok(names.includes("ls") && names.includes("powershell"), `${path}: Pi ls/powershell verbatim`);
 		assert.ok(names.includes("browser") && names.includes("computer"), `${path}: OMP browser/computer present`);
 		assert.ok(names.includes("generate_image") && names.includes("tts"), `${path}: OMP custom tools survive`);
@@ -554,17 +571,20 @@ function upstreamSchemaOf(t: Record<string, unknown>): Record<string, unknown> {
 }
 
 test("contract: full Pi inventory round-trips verbatim on all three paths", () => {
+	// This contract is about the fingerprint sextet, so it runs the translation
+	// the OpenCode lane actually performs: the rename into the `glob` slot is
+	// what makes Pi's `find` and the sextet's `glob` the same declaration.
 	for (const path of PATHS) {
 		const caller = PI_TOOL_NAMES.map((n) => richCallerTool(n, "pi"));
 		const snapshot = JSON.parse(JSON.stringify(caller)) as Array<Record<string, unknown>>;
-		const translated = translateToolsForPath(caller, path);
-		const withFp = injectFingerprintTools([...translated], path);
+		const translated = translateToolsForPath(caller, path, { forFingerprint: true });
+		const withFp = withFingerprintTools([...translated], path);
 		const names = withFp.map((t) => upstreamNameOf(t).toLowerCase());
 		assert.equal(names.length, new Set(names).size, `${path}: no duplicate upstream names`);
 		for (const fp of OPENCODE_FINGERPRINT_TOOLS) {
 			assert.equal(names.filter((n) => n === fp).length, 1, `${path}: fingerprint ${fp} exactly once`);
 		}
-		assert.ok(!names.includes("find"), `${path}: caller find never sent upstream as find`);
+		assert.ok(names.includes("find") || names.includes("glob"), `${path}: caller find reaches upstream under a tool name`);
 		for (const orig of snapshot) {
 			const fn = orig.function as Record<string, unknown>;
 			const cname = String(fn.name);
@@ -601,7 +621,7 @@ test("contract: full OMP inventory round-trips verbatim, zero injected", () => {
 			assert.deepEqual(upstreamSchemaOf(tool), ((orig!.function as Record<string, unknown>).parameters as Record<string, unknown>), `${path}: ${uname} params verbatim`);
 			assert.equal((tool as Record<string, unknown>)["x-host"], "omp", `${path}: ${uname} extra field verbatim`);
 		}
-		const again = injectFingerprintTools([...translated], path);
+		const again = withFingerprintTools([...translated], path);
 		assert.equal(again.length, translated.length, `${path}: re-inject adds zero when caller owns every slot`);
 	}
 });
@@ -613,7 +633,7 @@ test("contract: OMP-like injected glob uses the host path-optional schema", () =
 	// handed the old def emits pattern-shaped calls the host cannot execute.
 	for (const path of PATHS) {
 		const caller = [richCallerTool("ask", "omp"), richCallerTool("todo", "omp")];
-		const withFp = injectFingerprintTools(translateToolsForPath(caller, path), path);
+		const withFp = withFingerprintTools(translateToolsForPath(caller, path), path);
 		const glob = withFp.find((t) => upstreamNameOf(t).toLowerCase() === "glob");
 		assert.ok(glob, `${path}: missing glob is injected for OMP-like callers`);
 		const schema = upstreamSchemaOf(glob!) as { properties?: Record<string, unknown>; required?: unknown };
@@ -632,7 +652,7 @@ test("contract: injected edit never ships the unexecutable path+edit shape", () 
 	// COMPAT placeholder, or the real OMP hashline {input} def.
 	for (const path of PATHS) {
 		const caller = [richCallerTool("ask", "omp"), richCallerTool("todo", "omp")];
-		const withFp = injectFingerprintTools(translateToolsForPath(caller, path), path);
+		const withFp = withFingerprintTools(translateToolsForPath(caller, path), path);
 		const edit = withFp.find((t) => upstreamNameOf(t).toLowerCase() === "edit");
 		assert.ok(edit, `${path}: missing edit is injected for OMP-like callers`);
 		const schema = upstreamSchemaOf(edit!) as { properties?: Record<string, unknown> };
@@ -724,6 +744,17 @@ test("contract: cline body translation reshapes tools with zero fingerprint", ()
 	assert.equal((out.tools as unknown[]).length, 2, "cline adds zero fingerprint tools");
 	assert.ok(!("stream" in out), "cline translation never imposes a stream policy");
 	assert.equal(out.tool_choice, "auto", "cline carries tool_choice verbatim");
+});
+test("contract: the responses-native output cap reaches the chat-only lanes", () => {
+	// `max_output_tokens` is the field a host sets on /v1/responses. It was not
+	// on the chat whitelist, so on the Cline/OVH lanes the cap vanished and the
+	// model answered at its own default length.
+	const out = chatBodyFromResponsesBody({
+		model: "cline-free/deepseek-v4.1-flash",
+		input: "hi",
+		max_output_tokens: 4096,
+	});
+	assert.equal(out.max_output_tokens, 4096, "the output cap survives the shape mapping");
 });
 test("contract: OMP gated custom tools are caller tools end-to-end, never cloaked", () => {
 	// Row 3: generate_image + tts ride as ordinary caller tools. OMP-like caller

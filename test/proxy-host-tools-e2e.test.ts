@@ -427,7 +427,7 @@ const CLINE_MODEL = "z-ai/glm-5.3-flash";
 test("proxy e2e: cline responses path reshapes tools with zero fingerprint", async () => {
 	// Cline bypass (observable contract): a Cline-model request never carries
 	// the OpenCode fingerprint — tools are only reshaped responses->chat
-	// (caller find becomes glob), nothing is injected, and no store policy is
+	// (caller find keeps its name), nothing is injected, and no store policy is
 	// added. (Cline upstream always streams for aggregation; that is transport,
 	// not fingerprint.) Fails if the enforcement call-site ever fingerprints
 	// Cline bodies (upstream would see 6 extra tools).
@@ -468,7 +468,7 @@ test("proxy e2e: cline responses path reshapes tools with zero fingerprint", asy
 		assert.equal((upstream.tools as unknown[]).length, 2, "cline adds zero fingerprint tools");
 		const names = (upstream.tools as Array<unknown>).map(upstreamToolName);
 		assert.ok(names.includes("ask"), "cline keeps caller ask");
-		assert.ok(names.includes("glob"), "cline reshapes caller find to chat glob");
+		assert.ok(names.includes("find"), "cline carries the caller name through untouched");
 		assert.equal(upstream.stream, true, "cline upstream always streams for aggregation (transport, not fingerprint)");
 		assert.ok(!("store" in upstream), "cline never adds store");
 		assert.equal(upstream.tool_choice, "auto", "cline carries tool_choice verbatim");
@@ -528,8 +528,8 @@ test("proxy e2e: ovh chat bypass has zero fingerprint, forces upstream stream, a
 	const tools = upstream.tools as unknown[];
 	assert.equal(tools.length, callerTools.length, "ovh adds zero fingerprint tools");
 	const names = tools.map(upstreamToolName);
-	assert.ok(!names.includes("find"), "caller find is never sent upstream as find");
-	assert.ok(names.includes("glob"), "ovh reshapes caller find to chat glob");
+	assert.ok(names.includes("find"), "ovh carries the caller find name through untouched");
+	assert.ok(names.includes("find"), "ovh carries the caller find name through untouched");
 	assert.ok(names.includes("Bash"), "ovh keeps the caller's Bash casing (no fingerprint canonicalization)");
 	const client = JSON.parse(clientBody) as Record<string, unknown>;
 	assert.equal(client.object, "chat.completion", "a non-streaming chat caller gets the aggregated object");
@@ -623,7 +623,7 @@ test("proxy e2e: ovh responses path translates to chat upstream and answers a Re
 	assert.equal((upstream.tools as unknown[]).length, 2, "ovh adds zero fingerprint tools");
 	const names = (upstream.tools as unknown[]).map(upstreamToolName);
 	assert.ok(names.includes("ask"), "ovh keeps caller ask");
-	assert.ok(names.includes("glob"), "ovh reshapes caller find to chat glob");
+	assert.ok(names.includes("find"), "ovh carries the caller find name through untouched");
 	assert.equal(upstream.tool_choice, "auto", "ovh carries tool_choice verbatim");
 	const client = JSON.parse(clientBody) as Record<string, unknown>;
 	assert.equal(client.object, "response", "the chat answer maps back to a Responses object");
@@ -661,5 +661,154 @@ test("proxy e2e: ovh responses streaming caller gets Responses SSE re-emitted", 
 	assert.ok(clientBody.includes("response.completed"), "the SSE sequence carries a completed Responses event");
 	assert.ok(clientBody.includes("streamed-response"), "the upstream answer survives the round trip");
 	assert.ok(clientBody.includes("[DONE]"), "the stream terminates cleanly");
+});
+
+const GLUED_BASH = 'reelane-proxy"}{"i": "Confirming the files", "command": "git status --short", "cwd": "D:/repo"}';
+const BASH_PARAMS = { type: "object", properties: { i: { type: "string" }, command: { type: "string" }, timeout: { type: "number" }, cwd: { type: "string" } }, required: ["command"] };
+
+function piCallerTools(): Array<Record<string, unknown>> {
+	return [
+		{ type: "function", function: { name: "find", description: FIND_DESC, parameters: FIND_PARAMS } },
+		{ type: "function", function: { name: "bash", description: "Run a shell command", parameters: BASH_PARAMS } },
+];
+}
+
+/** Chat SSE answering with the renamed `glob` and a glued bash payload. */
+function chatSseWithCalls(model: string): string {
+	const chunk = (delta: unknown, finish?: string): string =>
+		`data: ${JSON.stringify({ id: "c1", object: "chat.completion", model, choices: [{ index: 0, delta, ...(finish ? { finish_reason: finish } : {}) }] })}\n\n`;
+	return (
+		chunk({ role: "assistant", content: "" }) +
+		chunk({ tool_calls: [{ index: 0, id: "c0", type: "function", function: { name: "glob", arguments: '{"pattern":"*.ts"}' } }] }) +
+		chunk({ tool_calls: [{ index: 1, id: "c1", type: "function", function: { name: "bash", arguments: GLUED_BASH } }] }) +
+		chunk({}, "tool_calls") +
+		"data: [DONE]\n\n"
+	);
+}
+
+test("proxy e2e: ovh chat returns the caller's own tool names and repaired arguments", async () => {
+	// Translation sends Pi `find` upstream as `glob`; the answer must come back
+	// as `find`, or the host has no tool by that name. The glued bash payload
+	// must be repaired on this lane too, since it carries the caller's schema.
+	let clientBody = "";
+	await withProxyAndMock(29328, (res) => {
+		res.writeHead(200, { "content-type": "text/event-stream" });
+		res.end(chatSseWithCalls("gpt-oss-20b"));
+	}, async (port) => {
+		const res = await postJson(port, "/v1/chat/completions", {
+			model: "ovh-free/gpt-oss-20b",
+			messages: [{ role: "user", content: "hi" }],
+			stream: false,
+			tools: piCallerTools(),
+		});
+		assert.equal(res.status, 200);
+		clientBody = res.body;
+	});
+	const client = JSON.parse(clientBody) as Record<string, unknown>;
+	const message = (client.choices as Array<Record<string, unknown>>)[0].message as Record<string, unknown>;
+	const calls = message.tool_calls as Array<Record<string, unknown>>;
+	assert.deepEqual(calls.map((c) => (c.function as Record<string, unknown>).name), ["find", "bash"]);
+	const bashArgs = JSON.parse((calls[1].function as Record<string, unknown>).arguments as string) as { command: string };
+	assert.equal(bashArgs.command, "git status --short", "the glued bash payload is repaired on the ovh lane");
+});
+
+test("proxy e2e: ovh chat streaming restores the caller's tool names", async () => {
+	let clientBody = "";
+	await withProxyAndMock(29329, (res) => {
+		res.writeHead(200, { "content-type": "text/event-stream" });
+		res.end(chatSseWithCalls("gpt-oss-20b"));
+	}, async (port) => {
+		const res = await postJson(port, "/v1/chat/completions", {
+			model: "ovh-free/gpt-oss-20b",
+			messages: [{ role: "user", content: "hi" }],
+			stream: true,
+			tools: piCallerTools(),
+		});
+		assert.equal(res.status, 200);
+		clientBody = res.body;
+	});
+	assert.ok(clientBody.includes('"name":"find"'), "streamed callers get their own tool name back");
+	assert.ok(!clientBody.includes('"name":"glob"'), "the upstream rename never reaches the client");
+	assert.ok(clientBody.includes("git status --short"), "the glued bash payload is repaired on the streamed ovh lane too");
+});
+
+test("proxy e2e: cline responses returns the caller's own tool name", async () => {
+	const read = (p: string): string | null => (fs.existsSync(p) ? fs.readFileSync(p, "utf8") : null);
+	const mainBefore = read(CLINE_POOL_FILE);
+	const bakBefore = read(CLINE_POOL_BACKUP_FILE);
+	try {
+		fs.rmSync(CLINE_POOL_FILE, { force: true });
+		fs.rmSync(CLINE_POOL_BACKUP_FILE, { force: true });
+		_resetClinePoolCacheForTest();
+		savePool({ accounts: [{ slot: "main", token: "workos:test-key-aaa111", addedAt: new Date().toISOString() }] });
+		_resetClinePoolCacheForTest();
+		let clientBody = "";
+		await withProxyAndMock(29330, (res) => {
+			res.writeHead(200, { "content-type": "text/event-stream" });
+			res.end(chatSseWithCalls("glm-5.3-flash"));
+		}, async (port) => {
+			const res = await postJson(port, "/v1/responses", {
+				model: CLINE_MODEL,
+				input: "hi",
+				stream: false,
+				tools: piCallerTools(),
+			});
+			assert.equal(res.status, 200);
+			clientBody = res.body;
+		});
+		const client = JSON.parse(clientBody) as Record<string, unknown>;
+		const output = client.output as Array<Record<string, unknown>>;
+		assert.deepEqual(output.filter((o) => o.type === "function_call").map((o) => o.name), ["find", "bash"]);
+		const bashArgs = JSON.parse(output[1].arguments as string) as { command: string };
+		assert.equal(bashArgs.command, "git status --short");
+	} finally {
+		_resetClinePoolCacheForTest();
+		if (mainBefore !== null) fs.writeFileSync(CLINE_POOL_FILE, mainBefore, "utf8");
+		else fs.rmSync(CLINE_POOL_FILE, { force: true });
+		if (bakBefore !== null) fs.writeFileSync(CLINE_POOL_BACKUP_FILE, bakBefore, "utf8");
+		else fs.rmSync(CLINE_POOL_BACKUP_FILE, { force: true });
+		_resetClinePoolCacheForTest();
+	}
+});
+
+test("proxy e2e: kilo repairs a non-stream JSON answer", async () => {
+	// Kilo passes the caller's `stream` through verbatim, so a non-streaming
+	// caller gets a plain JSON body. The SSE aggregator is a no-op on it, so the
+	// repair has to run on the JSON itself.
+	const answer = {
+		id: "chatcmpl-k",
+		object: "chat.completion",
+		model: "dots-3",
+		choices: [{
+			index: 0,
+			message: {
+				role: "assistant",
+				tool_calls: [
+					{ id: "c0", type: "function", function: { name: "find", arguments: '{"pattern":"*.ts"}' } },
+					{ id: "c1", type: "function", function: { name: "bash", arguments: GLUED_BASH } },
+				],
+			},
+			finish_reason: "tool_calls",
+		}],
+	};
+	let clientBody = "";
+	await withProxyAndMock(29331, (res) => {
+		res.writeHead(200, { "content-type": "application/json" });
+		res.end(JSON.stringify(answer));
+	}, async (port) => {
+		const res = await postJson(port, "/v1/chat/completions", {
+			model: KILO_MODEL,
+			messages: [{ role: "user", content: "hi" }],
+			stream: false,
+			tools: piCallerTools(),
+		});
+		assert.equal(res.status, 200);
+		clientBody = res.body;
+	});
+	const client = JSON.parse(clientBody) as Record<string, unknown>;
+	const message = (client.choices as Array<Record<string, unknown>>)[0].message as Record<string, unknown>;
+	const calls = message.tool_calls as Array<Record<string, unknown>>;
+	const bashArgs = JSON.parse((calls[1].function as Record<string, unknown>).arguments as string) as { command: string };
+	assert.equal(bashArgs.command, "git status --short", "a non-streaming kilo answer is repaired too");
 });
 

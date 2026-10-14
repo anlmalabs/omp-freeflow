@@ -104,7 +104,49 @@ declared, so the fix is schema-driven rather than a per-model quirk list:
   an ambiguous element discards the whole move.
 
 Arguments change only when the result validates against the declared schema.
-Well-formed calls stay byte-identical, tools without structured parameters are
-never buffered (so their arguments still stream incrementally), and truncated
-JSON is never completed. The repair runs on all three wire shapes, streamed and
-aggregated, for every supported upstream.
+Well-formed calls stay byte-identical and truncated JSON is never completed. The
+repair runs on all three wire shapes, streamed and aggregated, for every
+supported upstream.
+
+### Prefix glue
+
+Some models open a call by echoing the tail of the one they just saw, so a
+single argument string arrives as `<tail of the previous call>{"…this call…"}`
+and the host rejects it outright. The proxy locates the caller's own object
+behind the junk and hands that back, with the same rules that keep the salvage
+honest:
+
+- The junk usually ends mid-string, so the scan tracks brace depth only — string
+  state would classify the whole real call as "inside a string".
+- A brace that sits behind a declared key is never promoted, so an inner object
+  cannot replace the wrapper that declares it.
+- A truncated number literal (`"timeout":18`, of `180`) is refused rather than
+  completed; so is a cut inside a string.
+
+This runs against the caller's own schema for **every** tool that declares
+parameters, not only tools with a nested object or array: the most common host
+tool, `bash`, declares nothing but scalars, and the glue hits it as hard as it
+hits a planning tool. Where arguments must be buffered to be judged whole, the
+buffer is flushed when the stream ends even if the terminal event never arrived,
+so a cut stream still delivers the calls it announced.
+
+## Tool Name Mapping
+
+`src/tool-translation.ts` reshapes whatever either host declares into the shape
+the target path expects. Caller tools are never dropped, and only two rewrites
+ever happen:
+
+- Pi's `find` rides upstream as `glob` **on the free tier alone**, whose gate
+  looks for a sextet with that name in its `glob` slot — and only when the
+  caller left the slot empty. OMP declares **both** (`glob` for file patterns,
+  `find` for semantic search), and renaming there would collapse two real tools
+  into one under the other's schema.
+- Every other lane rides the caller's own names in **both** directions. There
+  the rename is pure loss: the upstream would have accepted `find`, and the host
+  gets `find` back and dispatches it natively.
+- Names outside `^[a-zA-Z0-9_.-]+$` are folded, because upstream rejects the
+  whole request otherwise.
+
+Every rewrite is recorded per request and undone on the way back, on all three
+wire shapes and on every upstream lane — a tool call that arrives under a name
+the host never registered cannot be dispatched at all.

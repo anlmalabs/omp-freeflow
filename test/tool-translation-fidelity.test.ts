@@ -20,10 +20,10 @@ import {
 	OMP_CUSTOM_TOOL_NAMES,
 	OMP_HIDDEN_TOOL_NAMES,
 	OMP_TOOL_NAMES,
-	injectFingerprintTools,
 	translateToolsForPath,
 	apiForPathname,
 } from "../src/tool-translation.ts";
+import { withFingerprintTools } from "./_fingerprint.ts";
 
 const PATHS = ["/v1/chat/completions", "/v1/responses", "/v1/messages"] as const;
 
@@ -192,19 +192,18 @@ const SCHEMA_CORPUS: Record<string, Record<string, unknown>> = {
 };
 
 /**
- * The two hosts never mix inventories in one request: Pi declares `find`,
- * OMP declares `glob`, and both rename onto the same upstream name. Auditing
- * them as one list would let the dedup hide one behind the other, so each
- * caller's real inventory gets its own pass.
+ * The two hosts never mix inventories in one request: Pi declares `find` and
+ * no `glob`, OMP declares both (`find` is OMP's semantic search, a different
+ * tool from Pi's file finder). Auditing them as one list would let the dedup
+ * hide one behind the other, so each caller's real inventory gets its own pass.
  */
 const SHARED_NAMES = [...OMP_HIDDEN_TOOL_NAMES, ...OMP_CUSTOM_TOOL_NAMES, ...Object.keys(SCHEMA_CORPUS)];
 const INVENTORIES: Array<[string, string[]]> = [
 	["pi", [...new Set<string>([...PI_TOOL_NAMES, ...SHARED_NAMES])]],
 	["omp", [...new Set<string>([...OMP_TOOL_NAMES, ...SHARED_NAMES])]],
 ];
-
-/** Every name, for the union-coverage assertions. */
-const NAMES = [...new Set<string>(INVENTORIES.flatMap(([, names]) => names))];
+/** Host -> the names that host actually declares. */
+const INVENTORY_NAMES: Record<string, string[]> = Object.fromEntries(INVENTORIES);
 
 /** A tool declaration in the caller's (pre-translate) chat shape. */
 function callerTool(name: string): Record<string, unknown> {
@@ -215,25 +214,34 @@ function callerTool(name: string): Record<string, unknown> {
 }
 
 /**
- * Wire name for a caller tool. `find` is deliberately declared as `glob` so the
- * upstream gate sees the tool it expects, and `restoreToolNameForCaller` maps
- * it back on the way home. A name the upstream shape forbids (`:` and `/` are
- * not in `^[a-zA-Z0-9_.-]+$`) is folded character-for-character and restored
- * downstream. Every other name rides verbatim — the model sees the same name
- * it always saw.
+ * Wire name for a caller tool in one host's inventory. Pi declares `find` and
+ * no `glob`, so its `find` is renamed to `glob` upstream (the name the gate
+ * expects) and `restoreToolNameForCaller` maps it back on the way home. OMP
+ * declares both real tools, so `find` keeps its own name there. A name the
+ * upstream shape forbids (`:` and `/` are not in `^[a-zA-Z0-9_.-]+$`) is folded
+ * character-for-character and restored downstream. Every other name rides
+ * verbatim — the model sees the same name it always saw.
  */
-function upstreamName(name: string): string {
-	if (name === "find") return "glob";
+function upstreamNameFor(caller: string, name: string): string {
+	// Names ride verbatim everywhere except the OpenCode fingerprint lane, so
+	// the audit runs the translation the fingerprint actually performs.
+	const declaresGlob = (INVENTORY_NAMES[caller] ?? []).includes("glob");
+	if (name === "find" && !declaresGlob) return "glob";
 	return name.replace(/[^a-zA-Z0-9_.-]/g, "_");
+}
+
+/** Translate the way the OpenCode lane does, then inject the sextet. */
+function fingerprinted(caller: string, path: string): Record<string, unknown>[] {
+	return withFingerprintTools(translateToolsForPath(INVENTORIES.find(([h]) => h === caller)![1].map(callerTool), path, { forFingerprint: true }), path);
 }
 
 test("every host tool name survives translation on every wire shape", () => {
 	for (const [caller, names] of INVENTORIES) {
 		for (const path of PATHS) {
-			const tools = injectFingerprintTools(translateToolsForPath(names.map(callerTool), path), path);
+			const tools = fingerprinted(caller, path);
 			const seen = new Set(tools.map((t) => canon(t).name));
 			for (const name of names) {
-				assert.ok(seen.has(upstreamName(name)), `${caller} ${path}: tool ${name} lost during translation`);
+				assert.ok(seen.has(upstreamNameFor(caller, name)), `${caller} ${path}: tool ${name} lost during translation`);
 			}
 		}
 	}
@@ -242,11 +250,11 @@ test("every host tool name survives translation on every wire shape", () => {
 test("every host tool schema is forwarded byte-identically", () => {
 	for (const [caller, names] of INVENTORIES) {
 		for (const path of PATHS) {
-			const tools = injectFingerprintTools(translateToolsForPath(names.map(callerTool), path), path);
+			const tools = fingerprinted(caller, path);
 			for (const name of names) {
 				const sent = callerTool(name).function as Record<string, unknown>;
-				const got = canon(pick(tools, upstreamName(name)));
-				assert.equal(got.name, upstreamName(name), `${caller} ${path}/${name}: name changed`);
+				const got = canon(pick(tools, upstreamNameFor(caller, name)));
+				assert.equal(got.name, upstreamNameFor(caller, name), `${caller} ${path}/${name}: name changed`);
 				assert.equal(got.description, sent.description, `${caller} ${path}/${name}: description not verbatim`);
 				// Byte-identical, not merely deep-equal: key order and every keyword survive.
 				assert.equal(
@@ -261,7 +269,7 @@ test("every host tool schema is forwarded byte-identically", () => {
 
 test("long and unicode descriptions reach the model unchanged", () => {
 	for (const path of PATHS) {
-		const tools = injectFingerprintTools(translateToolsForPath([callerTool("edit"), callerTool("write")], path), path);
+		const tools = withFingerprintTools(translateToolsForPath([callerTool("edit"), callerTool("write")], path), path);
 		assert.equal(canon(pick(tools, "edit")).description, LONG_DESCRIPTION, `${path}: long edit description altered`);
 		assert.equal(canon(pick(tools, "write")).description, UNICODE_DESCRIPTION, `${path}: unicode description altered`);
 	}
@@ -270,13 +278,13 @@ test("long and unicode descriptions reach the model unchanged", () => {
 test("fingerprint injection never duplicates or drops a caller tool", () => {
 	for (const [caller, names] of INVENTORIES) {
 		for (const path of PATHS) {
-			const tools = injectFingerprintTools(translateToolsForPath(names.map(callerTool), path), path);
+			const tools = withFingerprintTools(translateToolsForPath(names.map(callerTool), path), path);
 			const lowered = tools.map((t) => canon(t).name.toLowerCase());
 			const dupes = lowered.filter((n, i) => lowered.indexOf(n) !== i);
 			assert.deepEqual(dupes, [], `${caller} ${path}: duplicate tool names after injection: ${dupes.join(", ")}`);
 			// Every caller tool is still there exactly once, under its upstream name.
 			for (const name of names) {
-				const count = lowered.filter((n) => n === upstreamName(name).toLowerCase()).length;
+				const count = lowered.filter((n) => n === upstreamNameFor(caller, name).toLowerCase()).length;
 				assert.equal(count, 1, `${caller} ${path}: ${name} present ${count} times`);
 			}
 		}

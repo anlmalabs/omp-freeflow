@@ -557,8 +557,11 @@ export function enforceOpencodeFingerprint(
  const injected = missing.filter((n) => !ompLike || n === "edit");
  const injectedReal = ompLike ? missing.filter((n) => n !== "edit") : [];
 
+ // Zen alone asks for a rename: its free-tier gate looks for the sextet name
+ // `glob`, so a Pi caller that sent `find` needs it renamed into that slot.
+ // Every other lane accepts the caller's own names untouched.
  if (Array.isArray(body.tools)) {
-  body.tools = translateToolsForPath(body.tools, pathname);
+  body.tools = translateToolsForPath(body.tools, pathname, { forFingerprint: true });
  }
 
  const before = Array.isArray(body.tools) ? body.tools.length : 0;
@@ -881,10 +884,14 @@ export function sseToResponsesJson(
   }
  } catch { }
 
+ // Nothing in the stream carried a response object: the upstream turn ended
+ // without one. Report that honestly — a `completed` answer with zero output
+ // reads to the host as "the model chose to say nothing", which is a
+ // different (and wrong) claim than "the stream was cut".
  return {
   id: "resp_fallback",
   object: "response",
-  status: "completed",
+  status: "incomplete",
   output: [],
  };
 }
@@ -895,8 +902,11 @@ export function sseToResponsesJson(
  * never see tool_use: stray placeholder input folds to text, matching the
  * SSE aggregator fallback below. Ids ride verbatim; `input` is repaired
  * against the caller's declared schema when the emitted shape cannot be right.
+ *
+ * Exported so the streaming cloak applies these identical rules to a `message`
+ * frame that arrives mid-stream, instead of forwarding it verbatim.
  */
-function cloakMessagesContent(
+export function cloakMessagesContent(
  msg: unknown,
  callerHadTools: boolean,
  caseRestore?: CaseRestoreMap,
@@ -1089,7 +1099,79 @@ export function convertSseToJson(
    return JSON.stringify(sseToMessagesJson(trimmed, callerHadTools, caseRestore, findGlob, injected, argSchemas));
   }
   return JSON.stringify(sseToChatCompletionJson(trimmed, callerHadTools, caseRestore, findGlob, injected, argSchemas));
- } catch {
-  return sseText;
+ } catch (error) {
+  // Every caller has already committed to `content-type: application/json`
+  // by the time this runs, so handing back the raw SSE bytes would deliver a
+  // parse error with no diagnosis. Say what happened, and keep the payload
+  // reachable under `raw` so nothing is silently destroyed.
+  return JSON.stringify({
+   error: {
+    message: "upstream stream could not be aggregated into a JSON answer",
+    detail: String(error).slice(0, 300),
+    raw: sseText.slice(0, 2000),
+   },
+  });
  }
+}
+
+/**
+ * Repair the tool calls inside an already-JSON answer body.
+ *
+ * A lane that passes the caller's `stream` through untouched (Kilo) answers a
+ * non-streaming caller with a plain `chat.completion` / `response` object, not
+ * SSE. The SSE aggregators above never see that body, so the malformed
+ * arguments reached the host unrepaired on exactly the requests that asked for
+ * no stream. Repairs each call in place and re-serializes only when something
+ * actually changed, so a well-formed answer keeps its byte-identical body.
+ * Returns the input string untouched when it is not JSON or has no tool calls.
+ */
+export function repairJsonToolArguments(
+ bodyText: string,
+ pathname: string,
+ argSchemas: ReadonlyMap<string, Record<string, unknown>> | undefined,
+): string {
+ if (argSchemas === undefined || argSchemas.size === 0 || !bodyText.trimStart().startsWith("{")) return bodyText;
+ let parsed: unknown;
+ try {
+  parsed = JSON.parse(bodyText);
+ } catch {
+  return bodyText;
+ }
+ if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return bodyText;
+ const body = parsed as Record<string, unknown>;
+ let changed = false;
+ const repairCall = (name: string, args: string): string => {
+  const repaired = repairToolArguments(name, args, argSchemas);
+  if (repaired !== args) changed = true;
+  return repaired;
+ };
+ if (pathname.endsWith("/responses")) {
+  const output = body.output;
+  if (!Array.isArray(output)) return bodyText;
+  for (const item of output) {
+   if (item === null || typeof item !== "object" || Array.isArray(item)) continue;
+   const rec = item as Record<string, unknown>;
+   if (rec.type !== "function_call" || typeof rec.name !== "string" || typeof rec.arguments !== "string") continue;
+   rec.arguments = repairCall(rec.name, rec.arguments);
+  }
+ } else {
+  const choices = body.choices;
+  if (!Array.isArray(choices)) return bodyText;
+  for (const choice of choices) {
+   if (choice === null || typeof choice !== "object" || Array.isArray(choice)) continue;
+   const message = (choice as Record<string, unknown>).message;
+   if (message === null || typeof message !== "object" || Array.isArray(message)) continue;
+   const calls = (message as Record<string, unknown>).tool_calls;
+   if (!Array.isArray(calls)) continue;
+   for (const call of calls) {
+    if (call === null || typeof call !== "object" || Array.isArray(call)) continue;
+    const fn = (call as Record<string, unknown>).function;
+    if (fn === null || typeof fn !== "object" || Array.isArray(fn)) continue;
+    const fnRec = fn as Record<string, unknown>;
+    if (typeof fnRec.name !== "string" || typeof fnRec.arguments !== "string") continue;
+    fnRec.arguments = repairCall(fnRec.name, fnRec.arguments);
+   }
+  }
+ }
+ return changed ? JSON.stringify(body) : bodyText;
 }
