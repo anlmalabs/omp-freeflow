@@ -11,7 +11,6 @@ import {
  ALLOWED_PATH_PATTERN,
  DEFAULT_PORT,
  LEGACY_PORT,
- OPENCODE_USER_AGENT,
  OPENCODE_USER_AGENT_ENV,
  OPENCODE_VERSION_CACHE_ENV,
  OPENCODE_VERSION_FALLBACK,
@@ -80,7 +79,7 @@ test("zero hardcoded API keys exist in source tree", () => {
  assert.ok(bearerLines.length > 0, "expected Bearer credential lines in src");
  for (const { file, line, num } of bearerLines) {
   assert.ok(
-   line.includes("kilo-free") || line.includes("${token}"),
+   line.includes("kilo-free") || line.includes("${token}") || line.includes("Bearer public"),
    `${file}:${num} hardcodes an unexpected Bearer credential`,
   );
  }
@@ -95,7 +94,8 @@ test("sanitizeHeaders never emits duplicate User-Agent headers", () => {
  const fwd = sanitizeHeaders(incoming, "opencode.ai");
  const uaKeys = Object.keys(fwd).filter((k) => k.toLowerCase() === "user-agent");
  assert.equal(uaKeys.length, 1);
- assert.equal(fwd[uaKeys[0]], OPENCODE_USER_AGENT);
+ // Live/disk UA may differ from the pinned fallback constant.
+ assert.equal(fwd[uaKeys[0]], getOpenCodeUserAgent());
 });
 
 test("resolvePort honors the source-derived env override and falls back to default 28180", () => {
@@ -138,11 +138,12 @@ test("OpenCode session and request IDs match required OpenCode schema", () => {
  assert.equal(msg.length, 30, "request ID must be msg_ prefix + 26 char identifier");
 
  const headers = opencodeHeaders();
- assert.equal(headers["User-Agent"], OPENCODE_USER_AGENT);
+ assert.equal(headers["User-Agent"], getOpenCodeUserAgent());
  assert.equal(headers["x-opencode-client"], "cli");
  assert.ok(typeof headers["x-opencode-project"] === "string" && headers["x-opencode-project"].length > 0);
  assert.ok(headers["x-opencode-session"].startsWith("ses_"));
- assert.ok(headers["x-opencode-request"].startsWith("msg_"));
+ // Real OpenCode omits x-opencode-request on /inference/v1; sending it 403s.
+ assert.equal(headers["x-opencode-request"], undefined);
 });
 
 test("OpenCode IDs match the upstream identifier algorithm vectors", () => {

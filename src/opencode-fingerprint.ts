@@ -26,6 +26,7 @@
  * per-request map (never module-global).
  */
 import {
+ COMPAT_FINGERPRINT_SCHEMAS,
  COMPAT_TOOL_DESCRIPTION,
  OMP_FINGERPRINT_DEFS,
  OPENCODE_FINGERPRINT_TOOLS,
@@ -105,7 +106,7 @@ export function isPlaceholderToolName(name: unknown): boolean {
  * functions below.
  */
 function fingerprintFill(name: FingerprintToolName, omp: boolean): { description: string; schema: Record<string, unknown> } {
- if (!omp || name === "edit") return { description: COMPAT_TOOL_DESCRIPTION, schema: { type: "object", properties: {} } };
+ if (!omp || name === "edit") return { description: COMPAT_TOOL_DESCRIPTION, schema: COMPAT_FINGERPRINT_SCHEMAS[name] };
  const def = OMP_FINGERPRINT_DEFS[name];
  return { description: def.description, schema: { ...(def.parameters as Record<string, unknown>) } };
 }

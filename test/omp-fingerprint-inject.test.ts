@@ -1,10 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+ COMPAT_FINGERPRINT_SCHEMAS,
  COMPAT_TOOL_DESCRIPTION,
  OMP_FINGERPRINT_DEFS,
  OPENCODE_FINGERPRINT_TOOLS,
  canonicalizeTool,
+ type FingerprintToolName,
  isOmpLikeCaller,
 } from "../src/tool-translation.ts";
 import { withFingerprintTools } from "./_fingerprint.ts";
@@ -64,7 +66,7 @@ test("fingerprint injection: partial OMP [ask,glob] on responses yields real sch
   assert.ok(typeof t.name === "string");
   if (t.name === "edit") {
    assert.equal(t.description, COMPAT_TOOL_DESCRIPTION, "injected edit is always the cloaked placeholder");
-   assert.deepEqual(paramsOf(t), { type: "object", properties: {} });
+   assert.deepEqual(paramsOf(t), COMPAT_FINGERPRINT_SCHEMAS.edit);
   } else {
    assert.ok(!String(t.description).includes("never be invoked"), `${t.name}: no COMPAT description`);
   }
@@ -85,7 +87,7 @@ test("fingerprint injection: Pi callers keep empty placeholders; explicit ompLik
  for (const t of piOut) {
   if (String(t.name) === "find") continue;
   assert.equal(t.description, COMPAT_TOOL_DESCRIPTION, `${t.name}: Pi keeps placeholder`);
-  assert.deepEqual(paramsOf(t), { type: "object", properties: {} });
+  assert.deepEqual(paramsOf(t), COMPAT_FINGERPRINT_SCHEMAS[String(t.name) as FingerprintToolName]);
  }
  const forced = withFingerprintTools(
   [responsesTool("find", "f", { type: "object" })],

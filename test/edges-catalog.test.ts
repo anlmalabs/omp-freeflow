@@ -132,7 +132,7 @@ test("refreshCatalog 200 with empty data is a no-op returning the alive catalog"
  });
 });
 
-test("refreshCatalog 200 maps the /zen/v1/models free list onto catalog flags, dropping paid and dead", async () => {
+test("refreshCatalog 200 maps the /inference/v1/models free list onto catalog flags, dropping paid and dead", async () => {
  await withCacheFileIsolation(async () => {
   fs.rmSync(CATALOG_CACHE_FILE, { force: true });
   const baseline = baselineModels();

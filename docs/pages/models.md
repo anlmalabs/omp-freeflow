@@ -5,17 +5,17 @@ pi-freeflow provides unified access to **37 curated free models** across four up
 ## Upstream Protocol Distinction
 
 ### OpenCode Zen — Responses API (`/v1/responses`)
-- **Endpoint**: `https://opencode.ai/zen/v1/responses`
+- **Endpoint**: `https://opencode.ai/inference/v1/responses`
 - **Models**: `muse-spark-1.2-contributor-free`, `muse-spark-1.3-contributor-free` (1M context, 131K output, vision)
 - **Config**: `api: "openai-responses"`, session affinity via OpenAI-nosession
 
 ### OpenCode Zen — Chat Completions (`/v1/chat/completions`)
-- **Endpoint**: `https://opencode.ai/zen/v1/chat/completions`
+- **Endpoint**: `https://opencode.ai/inference/v1/chat/completions`
 - **Models**: 9 models (Cat Jam, Space Bunny, LongCat, MiMo, Nemotron, Big Pickle, Ling, etc.)
 - **Config**: `api: "openai-completions"`, supports reasoning effort
 
 ### OpenCode Zen — Messages API (`/v1/messages`)
-- **Endpoint**: `https://opencode.ai/zen/v1/messages`
+- **Endpoint**: `https://opencode.ai/inference/v1/messages`
 - **Models**: none right now — the flavor is wired and supported, but no current free model serves it
 - **Config**: `api: "anthropic-messages"`, no effort levels — the host sends a plain Anthropic body when a model declares this flavor
 
@@ -106,7 +106,7 @@ Anonymous access: no account, no key, no login step. Direct only, never through 
 ## Upstream Routing Matrix
 
 | Upstream | Models | Host | Wire Protocol | Auth |
-| **OpenCode Zen** | 10 | `opencode.ai/zen` | `/zen/v1` (Responses + Chat) | Keyless |
+| **OpenCode Zen** | 10 | `opencode.ai/inference` | `/inference/v1` (Responses + Chat) | `Bearer public` |
 | **KiloCode Gateway** | 15 | `api.kilo.ai` | `/api/gateway/chat/completions` | Keyless |
 | **Cline** | 2 | `api.cline.bot` | `/api/v1/chat/completions` | Per-user login (`/freeflow cline login`) |
 | **OVHcloud AI Endpoints** | 9 | `oai.endpoints.kepler.ai.cloud.ovh.net` | `/v1/chat/completions` (responses path translated) | Keyless, anonymous |
