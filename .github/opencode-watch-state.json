@@ -3,7 +3,7 @@
   "fileShas": {
     "identifier.ts": "77fc45a0401f03877521a6219e9691377e882a628826cc1489d51bc389c2f2fc",
     "session-id.ts": "ae484a090640a6ed93946ad4fb621545f446b66dcb36d66f6ce0163ca7f1d1f7",
-    "zen.mdx": "49cda0e6cfb6f575fa22bef455de8009def072a594b84ef1ba36ca20970dba1d"
+    "zen.mdx": "c061ba33c65b4a3bea0d6c2a93c999a68ba8f3a584dfb8af869aa08e4a134e4f"
   },
   "freeModels": [
     "big-pickle",
@@ -18,5 +18,5 @@
     "space-bunny-free",
     "step-5-preview-free"
   ],
-  "lastChecked": "2026-10-13T11:35:13.798Z"
+  "lastChecked": "2026-10-14T09:23:40.674Z"
 }
