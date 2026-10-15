@@ -213,11 +213,10 @@ export const OPENCODE_MODELS: ModelDef[] = [
   // The published 200k belongs to the paid deepseek-v4-flash-free, a different
   // model with a confusingly similar name. Acceptance is not capability; here
   // the two agree, which is why this is the declared number.
-  contextWindow: 1_048_576,
-  // 32,768 measured: a completion forced to run that long comes back
-  // finish_reason=length at exactly that count. The gateway ACCEPTS a larger
-  // max_tokens without complaint, so the higher value is not a real ceiling.
-  maxTokens: 32_768,
+  contextWindow: 1_000_000,
+  // 384,000 output tokens per https://models.dev/models/deepseek/deepseek-v4.1-flash/
+  // and live gateway boundary probe (gateway accepts up to 393,216 = 384KiB, rejects 393,217+ with 400).
+  maxTokens: 384_000,
   // Chat Completions only — a Responses-shaped request is refused with
   // 400 ModelProtocolUnsupported. `api` left unset, which means chat.
   input: ["text", "image"],

@@ -219,6 +219,7 @@ Good defaults for long coding sessions and agentic work.
 | `space-bunny-free` | Stealth preview (lab undisclosed) | **1M** (1.048.576) | **512K** (524.288) | `low … max` | ✅ |
 | `longcat-2.5-preview-free` | Meituan LongCat | **1M** (1.000.000) | **131K** (131.072) | `minimal … max` | ✅ |
 | `step-5-preview-free` | StepFun | **1M** (1.000.000) | **64K** (65.536) | `low … high` | ✅ |
+| `deepseek-v4.1-flash-free` | DeepSeek | **1M** (1.000.000) | **384K** (384.000) | `minimal … max` | ✅ |
 
 #### KiloCode Gateway (14 models), OpenRouter compatible
 

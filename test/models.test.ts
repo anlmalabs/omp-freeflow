@@ -257,10 +257,8 @@ test("catalog spec lock: live-verified ctx/max/reasoning per model", () => {
   // it — recall holds through prompt_tokens=1,030,800, and an oversized request
   // is refused with an empty-bodied 400 somewhere above ~1.05M. The published
   // 200k belongs to the paid deepseek-v4-flash-free, a different model.
-  // Output 32,768 measured: the gateway ACCEPTS a larger max_tokens silently,
-  // but a completion forced to run long comes back finish_reason=length at
-  // exactly 32,768, so the permissive value is not a real ceiling.
-  "deepseek-v4.1-flash-free": { ctx: 1_048_576, max: 32_768, reasoning: true },
+  // Output 384,000 per https://models.dev/models/deepseek/deepseek-v4.1-flash/ and gateway probe
+  "deepseek-v4.1-flash-free": { ctx: 1_000_000, max: 384_000, reasoning: true },
   // KiloCode Gateway
   "dots-studio/dots-3-note-preview:free": { ctx: 512_000, max: 512_000, reasoning: true },
   "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free": { ctx: 256_000, max: 131_072, reasoning: true },
@@ -313,8 +311,8 @@ test("2026-10-15 Zen DeepSeek V4.1 Flash carries probe-measured specs", () => {
  const ds = getModelDef("deepseek-v4.1-flash-free");
  assert.ok(ds);
  assert.equal(ds.reasoning, true);
- assert.equal(ds.contextWindow, 1_048_576);
- assert.equal(ds.maxTokens, 32_768);
+ assert.equal(ds.contextWindow, 1_000_000);
+ assert.equal(ds.maxTokens, 384_000);
  assert.deepEqual(ds.input, ["text", "image"]);
  // Chat-only upstream: a Responses request is refused, so no api override.
  assert.equal(ds.api, undefined);
