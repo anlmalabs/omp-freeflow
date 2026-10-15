@@ -1,0 +1,84 @@
+name: OpenCode Free-Tier Models Health Check
+
+on:
+  schedule:
+    # Run every 12 hours (06:00 and 18:00 UTC)
+    - cron: "0 6,18 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check-models:
+    name: Probe OpenCode Free Models
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js (LTS)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "lts/*"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Probe All OpenCode Free Tier Models
+        id: probe
+        run: |
+          set +e
+          node --experimental-strip-types scripts/check-opencode-models.ts --output model-health-report.md
+          EXIT_CODE=$?
+          set -e
+
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo "AFFECTED_MODELS=true" >> "$GITHUB_ENV"
+          else
+            echo "AFFECTED_MODELS=false" >> "$GITHUB_ENV"
+          fi
+
+      - name: Publish Step Summary
+        if: always()
+        run: |
+          if [ -f model-health-report.md ]; then
+            cat model-health-report.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Open or Update GitHub Issue on Affected Models
+        if: env.AFFECTED_MODELS == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LABEL="opencode-model-alert"
+          gh label create "$LABEL" --description "OpenCode free-tier model alert" --color "b60205" --force || true
+
+          BODY_ARGS="--body-file model-health-report.md"
+          if [ ! -f model-health-report.md ]; then
+            BODY_ARGS="--body \"OpenCode free tier models health probe detected affected models. Check workflow logs.\""
+          fi
+
+          EXISTING_ISSUE=$(gh issue list --label "$LABEL" --state open --json number --jq '.[0].number')
+          if [ -n "$EXISTING_ISSUE" ]; then
+            echo "Updating existing alert issue #$EXISTING_ISSUE"
+            gh issue comment "$EXISTING_ISSUE" $BODY_ARGS
+          else
+            echo "Creating new alert issue"
+            CURRENT_DATE=$(date -u +'%Y-%m-%d %H:%M UTC')
+            gh issue create \
+              --title "🚨 OpenCode Free Tier Model Disruption (${CURRENT_DATE})" \
+              --label "$LABEL" \
+              $BODY_ARGS
+          fi
