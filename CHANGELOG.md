@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.38.0
+
+### Minor Changes
+
+- Follow pi's config-dir global: data files (relay state, logs, caches — including the staged daemon sources) now root at `PI_CODING_AGENT_DIR` when set, instead of always `~/.pi/agent`. CI and containers can relocate pi's config dir once and the extension writes alongside it. A leading `~` in either override expands to the home directory, and `PI_FREEFLOW_DATA_DIR` still overrides everything.
+
+### Patch Changes
+
+- Startup no longer stalls for several seconds when the extension is installed as a package and runs under Node.js: the detached proxy daemon is now launched from a staged copy of its sources (Node refuses to strip types for files under `node_modules`), a daemon that exits immediately is detected instead of being awaited for the full ready timeout, and a free base port is no longer mistaken for an unresponsive port holder.
+
 ## 1.37.1
 
 ### Patch Changes
