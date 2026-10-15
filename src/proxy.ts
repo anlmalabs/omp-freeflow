@@ -687,48 +687,6 @@ async function handleKiloRequest(opts: {
  }
 }
 
-/**
- * In-flight auto-recovery for Zen 403 FreeTierError: immediately fail over
- * the current request to a healthy Kilo model instead of surfacing 403 to the caller.
- * Returns true when recovery was dispatched; false when failover is impossible.
- */
-async function tryZenGateAutoFailover(opts: {
- parsedBody: Record<string, unknown> | null;
- pathname: string;
- req: http.IncomingMessage;
- res: http.ServerResponse;
- reqId: string;
- clientRequestedStream: boolean;
- sessionKey?: string | null;
-}): Promise<boolean> {
- const { parsedBody, pathname, req, res, reqId, clientRequestedStream, sessionKey } = opts;
- if (!parsedBody || res.headersSent || res.writableEnded) return false;
- const fallbackModel = pickFailoverModel(parsedBody.model);
- if (!fallbackModel) return false;
- try {
-  const fromModel = String(parsedBody.model ?? "?");
-  parsedBody.model = fallbackModel;
-  if (pathname.endsWith("/responses")) {
-   prepareResponsesFailoverBody(parsedBody);
-  } else {
-   prepareChatFailoverBody(parsedBody);
-  }
-  log("warn", `zen 403 FreeTierError auto-fixed: failing over ${fromModel} -> ${fallbackModel}`, { model: fromModel, failover: fallbackModel }, reqId);
-  await handleKiloRequest({
-   parsedBody,
-   pathname,
-   req,
-   res,
-   reqId,
-   clientRequestedStream,
-   sessionKey,
-  });
-  return true;
- } catch (err) {
-  log("warn", `zen 403 FreeTierError auto-failover failed: ${String(err)}`, { error: String(err) }, reqId);
-  return false;
- }
-}
 
 /**
  * Relay eligibility: only free-catalog models ride relay egress. Returns true
@@ -1715,18 +1673,6 @@ export function startProxy(
           log("warn", `upstream ${response.status} for model ${String((parsedBody as Record<string, unknown> | null)?.model ?? "?")} via ${servedRelay === "direct" ? "direct upstream" : `relay ${servedRelay}`}`, { status: response.status, model: (parsedBody as Record<string, unknown> | null)?.model, path: req.url, relay: servedRelay }, reqId);
          }
          let rawText = await response.text();
-         if (response.status === 403 && isFreeTierGate(403, rawText)) {
-          const recovered = await tryZenGateAutoFailover({
-           parsedBody: parsedBody as Record<string, unknown> | null,
-           pathname: target.pathname,
-           req,
-           res,
-           reqId,
-           clientRequestedStream,
-           sessionKey,
-          });
-          if (recovered) return;
-         }
          let ct =
           response.headers.get("content-type") ||
           "application/json";
@@ -1885,22 +1831,8 @@ export function startProxy(
       // Gated upstream: a 403 free-tier gate is a final answer, not a
       // stream — buffer it and attach the recovery hint instead of
       // piping it through as a stream body.
-      // Gated upstream: a 403 free-tier gate is auto-recovered via Kilo failover.
-      // If failover is impossible, buffer it and attach the recovery hint.
-      if (upstreamRes.status === 403) {
-       const rawText403 = await upstreamRes.text();
-       if (isFreeTierGate(403, rawText403)) {
-        const recovered = await tryZenGateAutoFailover({
-         parsedBody: parsedBody as Record<string, unknown> | null,
-         pathname: target.pathname,
-         req,
-         res,
-         reqId,
-         clientRequestedStream,
-         sessionKey,
-        });
-        if (recovered) return;
-       }
+     if (upstreamRes.status === 403) {
+      const rawText403 = await upstreamRes.text();
        const data = withFreeTierHint(403, rawText403);
        const ct403 = upstreamRes.headers.get("content-type") || "application/json";
        res.writeHead(403, { "content-type": ct403 });

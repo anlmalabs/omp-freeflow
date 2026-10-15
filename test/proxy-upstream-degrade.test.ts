@@ -397,9 +397,11 @@ test("degrade e2e: gate x2 then new chat served as Kilo, proven stays on zen", a
 
 			for (let i = 0; i < 2; i++) {
 				const gated = await post(chatBody(ZEN_MODEL, `fresh-${i}`));
-				assert.equal(gated.status, 200, "gate 403 must auto-recover to Kilo");
-				const gatedBody: Record<string, unknown> = await gated.json();
-				assert.equal(gatedBody.served_by, "kilo");
+				assert.equal(gated.status, 403);
+				const gatedBody: unknown = await gated.json();
+				const err = gatedBody && typeof gatedBody === "object" && "error" in gatedBody ? gatedBody.error : null;
+				const msg = err && typeof err === "object" && "message" in err ? err.message : "";
+				assert.match(String(msg), /only be used from within OpenCode/);
 			}
 
    let failedOver: Record<string, unknown> | null = null;
@@ -447,11 +449,9 @@ test("degrade e2e: gate x2 then new chat served as Kilo, proven stays on zen", a
 			resumed.messages.push({ role: "user", content: "e2e resumed hello" });
 			const resumedText = JSON.stringify(resumed);
 			const refused = await post(resumedText);
-			assert.equal(refused.status, 200, "resumed replay that triggers 403 auto-recovers to Kilo");
-			const refusedBody: Record<string, unknown> = await refused.json();
-			assert.equal(refusedBody.served_by, "kilo");
+			assert.equal(refused.status, 403);
 			const healed = await post(resumedText);
-			assert.equal(healed.status, 200, "resumed retry fails over to Kilo");
+			assert.equal(healed.status, 200);
 			const healedBody: Record<string, unknown> = await healed.json();
 			assert.equal(healedBody.served_by, "kilo");
   } finally {
@@ -464,53 +464,6 @@ test("degrade e2e: gate x2 then new chat served as Kilo, proven stays on zen", a
  });
 });
 
-test("degrade e2e: gate 403 falls through to hint when Kilo failover is unavailable", async (t) => {
-	await withIsolatedRelayFiles(async () => {
-		const priorState = getActiveRelayState();
-		setActiveRelayState({ enabled: true, url: "", relays: [] }, false);
-		resetAllRelayHealth();
-		_resetUpstreamHealthForTest();
-		_resetFreeTierHintForTest();
-
-		const { server, port } = await startProxy(19294);
-		const effectivePort = port ?? 19294;
-		const localPrefix = `http://127.0.0.1:${effectivePort}`;
-		const realFetch = globalThis.fetch.bind(globalThis);
-		try {
-			t.mock.method(
-				globalThis,
-				"fetch",
-				async (url: unknown, init?: RequestInit) => {
-					const u = String(url);
-					if (u.startsWith(localPrefix)) return realFetch(u, init);
-					if (u.includes("api.kilo.ai")) {
-						// Kilo is down / throws
-						throw new Error("kilo network error");
-					}
-					return jsonResponse(403, GATE_BODY);
-				},
-			);
-
-			const post = (body: string): Promise<Response> =>
-				fetch(`${localPrefix}/v1/chat/completions`, {
-					method: "POST",
-					headers: { "content-type": "application/json" },
-					body,
-				});
-
-			const res = await post(chatBody(ZEN_MODEL, "fallback test"));
-			assert.equal(res.status, 403, "must fall through to 403 when failover fails");
-			const body: Record<string, unknown> = await res.json();
-			assert.equal(typeof body.hint, "string", "must attach free tier hint");
-		} finally {
-			_resetUpstreamHealthForTest();
-			_resetFreeTierHintForTest();
-			resetAllRelayHealth();
-			setActiveRelayState(priorState, false);
-			if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
-		}
-	});
-});
 
 test("degrade e2e: kilo 400 bad request recovers by clamping tokens and falling back to 1M model", async (t) => {
  await withIsolatedRelayFiles(async () => {
