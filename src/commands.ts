@@ -1844,7 +1844,7 @@ export function createCommandSpec(
      const pf = parseDeployPlatform(rest);
      if (!pf) {
       ctx.ui.notify(
-       "Unknown platform. Use: cloudflare | deno | vercel",
+       "Unknown platform. Use: cloudflare | deno | vercel (for self-hosted VPS, see https://github.com/trefeon/warp-relay-pool)",
        "warning",
       );
      } else {

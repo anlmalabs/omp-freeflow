@@ -75,3 +75,10 @@ Free tier: 100,000 requests/day. Deploy via `/freeflow deploy deno` or manual pl
 
 ### Vercel Edge Function (Last Resort)
 Only use with a paid plan or a spare Hobby project you can afford to lose: the Hobby plan caps Fast Origin Transfer at 10 GB, and a streaming relay burns roughly 1.2 MB per turn (about 8,000 turns total). Once the cap is hit, every deployment in the project returns HTTP 402 and the whole pool goes dark until the quota resets. Deploy via `/freeflow deploy vercel` (in-memory token, auto-adds to pool) or manual Git deploy with `api/relay.js` + `vercel.json`.
+
+### Self-Hosted VPS Relay with WARP (`warp-relay-pool`)
+For users with a Linux VPS who prefer a self-hosted relay instead of serverless edge functions:
+- **Repository**: [trefeon/warp-relay-pool](https://github.com/trefeon/warp-relay-pool)
+- **1GB VPS friendly**: Optimized lightweight footprint that runs smoothly on entry-level 1GB RAM instances.
+- **WARP egress rotation**: Uses Cloudflare WARP with automatic egress IP rotation to prevent upstream rate limits.
+- **Setup**: Run `warp-relay-pool` on your VPS, then register it in pi-freeflow with `/freeflow add https://your-vps:port [label]`.

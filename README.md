@@ -108,6 +108,18 @@ For `api/relay.js`, use the canonical worker source (see below); `vercel.json` s
 { "rewrites": [{ "source": "/(.*)", "destination": "/api/relay" }] }
 ```
 
+**Option D: Self-Hosted WARP Relay on VPS (1GB VPS friendly)**
+
+If you have a Linux VPS (even a low-spec 1GB RAM instance), you can self-host a dedicated egress relay pool using [trefeon/warp-relay-pool](https://github.com/trefeon/warp-relay-pool):
+- **1GB VPS friendly**: Lightweight footprint designed to run comfortably on low-resource VPS nodes.
+- **Rotating Cloudflare WARP egress**: Automatically rotates outbound IPs so upstream rate limits don't block your sessions.
+- **Full protocol compatibility**: Implements the `x-relay-target` contract used by pi-freeflow.
+
+Once deployed on your VPS, register it in your relay pool:
+```bash
+/freeflow add https://your-vps:port vps-warp-relay
+```
+
 **Canonical worker source (all platforms)**
 
 The relay worker template is generated per deployment by `/freeflow deploy`, with one shared core adapted for Vercel, Cloudflare, and Deno. Every deploy embeds a random 32-byte secret, and the generated worker answers `401` to any request without a matching `x-relay-auth` header; the client sends that secret to each relay in the pool. Only a hand-pasted legacy worker built without a secret is open to anyone. Either way, a relay forwards only to an allowlist (`https://opencode.ai`, `https://api.kilo.ai`) with private-host and path checks.
