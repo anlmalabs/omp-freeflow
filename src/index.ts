@@ -185,6 +185,7 @@ export default async function(pi: ExtensionAPI): Promise<void> {
    buildProviderConfig(models, actualPort),
   );
  };
+ registerCatalog(registeredCatalog);
  const ensureDaemon = async (ui?: ExtensionUIContext): Promise<void> => {
   const reattach = (port: number): void => {
    if (port !== actualPort) {

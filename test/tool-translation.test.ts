@@ -22,6 +22,8 @@ import {
 	buildFindGlobRestore,
 	canonicalizeTool,
 	chatBodyFromResponsesBody,
+	chatResponsesJsonFromChatCompletion,
+	chatResponsesSseFromChatCompletion,
 	restoreToolChoiceForCaller,
 	restoreToolNameForCaller,
 	retargetToolChoiceForUpstream,
@@ -955,4 +957,21 @@ test("a sanitized tool name round-trips through a full streamed response", () =>
 		["TG drive"],
 		"the model called the sanitized name; the caller must still get its own",
 	);
+});
+
+test("chatResponsesSseFromChatCompletion emits response.output_text.delta so UI never sees blank reply", () => {
+	const chat = {
+		id: "chatcmpl_test",
+		model: "cline-free/muse-spark-1.3-contributor",
+		choices: [{
+			message: { role: "assistant", content: "Hello from Cline!" },
+			finish_reason: "stop",
+		}],
+	};
+	const resp = chatResponsesJsonFromChatCompletion(chat, "cline-free/muse-spark-1.3-contributor");
+	const sse = chatResponsesSseFromChatCompletion(resp);
+	assert.ok(sse.includes("event: response.output_text.delta"), "must emit response.output_text.delta");
+	assert.ok(sse.includes("Hello from Cline!"), "must carry the assistant text");
+	assert.ok(sse.includes("event: response.completed"), "must emit response.completed");
+	assert.ok(sse.includes("data: [DONE]"), "must terminate with [DONE]");
 });

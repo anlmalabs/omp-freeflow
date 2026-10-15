@@ -857,11 +857,11 @@ export function sanitizeHeaders(
  sanitized.connection = "keep-alive";
  return sanitized;
 }
-export async function isProxyAlive(port: number): Promise<boolean> {
+export async function isProxyAlive(port: number, timeoutMs = 600): Promise<boolean> {
  if (!Number.isInteger(port) || port < 1 || port > 65535) return false;
  try {
   const res = await fetch(`http://${HOST}:${port}/v1/models`, {
-   signal: AbortSignal.timeout(1500),
+   signal: AbortSignal.timeout(timeoutMs),
   });
   const ct = res.headers.get("content-type") || "";
   return res.ok && ct.includes("application/json");

@@ -20,10 +20,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js 22
+      - name: Setup Node.js (LTS)
         uses: actions/setup-node@v4
         with:
-          node-version: "22.x"
+          node-version: "lts/*"
 
       - name: Run OpenCode Watch Check
         id: check

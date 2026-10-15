@@ -790,8 +790,51 @@ export function chatResponsesJsonFromChatCompletion(chat: Record<string, unknown
  */
 export function chatResponsesSseFromChatCompletion(resp: Record<string, unknown>): string {
  const head = { type: "response.created", response: { id: resp.id, object: "response", model: resp.model } };
+ let out = `event: response.created\ndata: ${JSON.stringify(head)}\n\n`;
+ const output = resp.output;
+ if (Array.isArray(output)) {
+  for (let idx = 0; idx < output.length; idx++) {
+   const item = output[idx] as Record<string, unknown>;
+   if (item && item.type === "message" && Array.isArray(item.content)) {
+    for (const part of item.content) {
+     const p = part as Record<string, unknown>;
+     if (p && p.type === "output_text" && typeof p.text === "string" && p.text.length > 0) {
+      out += `event: response.output_text.delta\ndata: ${JSON.stringify({
+       type: "response.output_text.delta",
+       output_index: idx,
+       delta: p.text,
+      })}\n\n`;
+     }
+    }
+   } else if (item && item.type === "function_call") {
+    out += `event: response.output_item.added\ndata: ${JSON.stringify({
+     type: "response.output_item.added",
+     output_index: idx,
+     item: {
+      type: "function_call",
+      id: item.id,
+      call_id: item.call_id,
+      name: item.name,
+      arguments: "",
+     },
+    })}\n\n`;
+    if (typeof item.arguments === "string" && item.arguments.length > 0) {
+     out += `event: response.function_call_arguments.delta\ndata: ${JSON.stringify({
+      type: "response.function_call_arguments.delta",
+      output_index: idx,
+      delta: item.arguments,
+     })}\n\n`;
+    }
+    out += `event: response.output_item.done\ndata: ${JSON.stringify({
+     type: "response.output_item.done",
+     output_index: idx,
+     item,
+    })}\n\n`;
+   }
+  }
+ }
  const done = { type: "response.completed", response: resp };
- return `event: response.created\ndata: ${JSON.stringify(head)}\n\n` +
-  `event: response.completed\ndata: ${JSON.stringify(done)}\n\n` +
-  `data: [DONE]\n\n`;
+ out += `event: response.completed\ndata: ${JSON.stringify(done)}\n\n`;
+ out += `data: [DONE]\n\n`;
+ return out;
 }
