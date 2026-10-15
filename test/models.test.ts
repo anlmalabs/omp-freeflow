@@ -259,7 +259,6 @@ test("catalog spec lock: live-verified ctx/max/reasoning per model", () => {
 	// specs per models.dev opencode/step-5-preview-free + StepFun docs: 1M ctx / 64K max,
 	// text+image+video, efforts low/medium/high — minimal explicitly null, xhigh/max null)
 	"step-5-preview-free": { ctx: 1_000_000, max: 65_536, reasoning: true },
-  "ling-3.1-flash-free": { ctx: 262_144, max: 32_768, reasoning: true },
   // KiloCode Gateway
   "dots-studio/dots-3-note-preview:free": { ctx: 512_000, max: 512_000, reasoning: true },
   "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free": { ctx: 256_000, max: 131_072, reasoning: true },
@@ -319,6 +318,11 @@ test("new alias map resolves to canonical kilo ids", () => {
 test("union-alpha is pruned from the static catalog", () => {
  assert.equal(MODEL_MAP.get("union-alpha"), undefined, "union-alpha must not be in MODEL_MAP");
  assert.equal(ALL_MODELS.some((m) => m.id === "union-alpha"), false, "union-alpha must not be in ALL_MODELS");
+});
+
+test("ling-3.1-flash-free is pruned from the static catalog", () => {
+	assert.equal(MODEL_MAP.get("ling-3.1-flash-free"), undefined, "ling-3.1-flash-free must not be in MODEL_MAP");
+	assert.equal(ALL_MODELS.some((m) => m.id === "ling-3.1-flash-free"), false, "ling-3.1-flash-free must not be in ALL_MODELS");
 });
 
 test("2026-10-13 OVH lane: every id routes to the ovh upstream, never Zen", () => {
