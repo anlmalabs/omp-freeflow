@@ -197,12 +197,13 @@ The same command set works identically in OMP and Pi:
 
 ---
 
-### 34 models, one command
+### 35 models, one command
 
 ```bash
 /model → freeflow → pick
 ```
 
+Every model specification is reconciled against [models.dev](https://models.dev/), [OpenRouter](https://openrouter.ai/), and OMP's built-in catalog, configured with the highest verified context, output ceiling, and reasoning capabilities across twin models.
 #### OpenCode Zen (11 models), Responses and Chat API
 
 Good defaults for long coding sessions and agentic work.

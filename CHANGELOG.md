@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.37.1
+
+### Patch Changes
+
+- **DeepSeek V4.1 Flash (`deepseek-v4.1-flash-free`)**: Added to the OpenCode Zen lane (catalog 34 → 35 models). Configured with full **1,000,000 context window**, **384,000 max output tokens**, vision support (`input: ["text", "image"]`), and reasoning ladder (`minimal..max`).
+- **Sources of Truth & Highest-Spec Twin Policy**: Documented model reconciliation against [models.dev](https://models.dev/), [OpenRouter](https://openrouter.ai/), and OMP's built-in catalog, ensuring models are configured to the highest capability across twin models rather than artificially truncated limits.
+- **Automated OpenCode Model Health Bot**: Added dedicated GitHub Actions workflow and probe engine to continuously detect affected or degraded OpenCode free-tier models.
+
 ## 1.37.0
 
 ### Minor Changes

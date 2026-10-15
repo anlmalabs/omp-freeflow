@@ -102,14 +102,33 @@ Anonymous access: no account, no key, no login step. Direct only, never through 
 
 \* MiMo collapses `minimal→low` and `xhigh→high` upstream — 5 labels, 3 effective effort values (low/medium/high).
 
+## Sources of Truth & Twin-Model Reconciliation
+
+pi-freeflow configures models using a rigorous multi-source validation pipeline rather than copying unverified claims:
+
+| Authority | Source | Role in pi-freeflow |
+| :--- | :--- | :--- |
+| **models.dev** | [`https://models.dev/`](https://models.dev/) (`api.json`) | Canonical open-source registry aggregating 230+ providers and model architectures. |
+| **OpenRouter** | [`https://openrouter.ai/api/v1/models`](https://openrouter.ai/api/v1/models) | Sibling-lane cross-validation for gateway specifications, input modalities, and token pricing floors. |
+| **OMP Built-in Catalog** | `reference/oh-my-pi/packages/catalog/src/models.json` | Authoritative coding-agent catalog grounding tested specifications across 75+ active providers. |
+| **Live Upstream Probing** | Active gateway endpoints (`/inference/v1`, `/gateway/chat/completions`) | Direct empirical measurement of token limits, output ceilings, tool-call formatting, and protocol support. |
+
+### Highest-Spec Twin Configuration Policy
+
+When a model is available under multiple twin names (e.g. `deepseek-v4.1-flash-free` vs `deepseek-ai/DeepSeek-V4.1-Flash`), pi-freeflow configures the entry using the **highest verified capability across twin models**:
+- **Context Windows**: Set to the full architectural capacity (e.g. 1M / 1,048,576 tokens) verified by prompt-marker recall probes.
+- **Output Limits**: Set to the highest verified ceiling accepted by the upstream gateway (e.g. 384,000 tokens for DeepSeek V4.1 Flash, confirmed by empirical boundary testing up to 393,216).
+- **Modalities**: Full multimodal support (`["text", "image", "video"]`) where the underlying architecture and upstream gateway support vision.
+- **Thinking Ladders**: All supported reasoning depths (`minimal..max`) enabled without artificial clamping.
+
 ## Upstream Routing Matrix
 
 | Upstream | Models | Host | Wire Protocol | Auth |
-| **OpenCode Zen** | 10 | `opencode.ai/inference` | `/inference/v1` (Responses + Chat) | `Bearer public` |
+| :--- | :---: | :--- | :--- | :--- |
+| **OpenCode Zen** | 11 | `opencode.ai/inference` | `/inference/v1` (Responses + Chat) | `Bearer public` |
 | **KiloCode Gateway** | 14 | `api.kilo.ai` | `/api/gateway/chat/completions` | Keyless |
 | **Cline** | 2 | `api.cline.bot` | `/api/v1/chat/completions` | Per-user login (`/freeflow cline login`) |
 | **OVHcloud AI Endpoints** | 8 | `oai.endpoints.kepler.ai.cloud.ovh.net` | `/v1/chat/completions` (responses path translated) | Keyless, anonymous |
-
 ## Stealth previews
 
 Masked IDs such as Omen Alpha are tracked on the [Stealth Models Watchlist](/pages/stealth-models). Nothing there enters this table until it is live on a free list and answers a live probe.
