@@ -11,7 +11,7 @@ Instead of VPN tunnels, pi-freeflow uses standard edge worker scripts across **C
        │
        │ (1) Request with headers:
        │     x-relay-target: https://opencode.ai
-       │     x-relay-path: /zen/v1/chat/completions
+       │     x-relay-path: /inference/v1/chat/completions
        ▼
 [Edge Relay Proxy (Cloudflare / Vercel)]
        │

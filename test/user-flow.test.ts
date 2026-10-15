@@ -407,7 +407,7 @@ test("user flow [4/6] /freeflow deploy vercel adds a relay, activates it, and pr
      );
     }
     if (url.startsWith("https://relay-test.vercel.app")) {
-     // probeRelay round-trip (x-relay-path=/zen/v1/models)
+     // probeRelay round-trip (x-relay-path=/inference/v1/models)
      return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
     }
     throw new Error(`unexpected fetch in deploy flow: ${url}`);

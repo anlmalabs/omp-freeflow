@@ -117,6 +117,13 @@ test("enforceOpencodeFingerprint: tool-less body gains 6 injected tools and stre
 	assert.equal(body.stream, true);
 	const names = (body.tools as Array<{ function: { name: string } }>).map((t) => t.function.name).sort();
 	assert.deepEqual(names, ["bash", "edit", "glob", "grep", "read", "write"]);
+	for (const tool of body.tools as Array<{ function: { name: string; parameters: { properties: Record<string, unknown> } } }>) {
+		assert.ok(Object.keys(tool.function.parameters.properties).length > 0, `${tool.function.name} must have non-empty properties for inference gate`);
+	}
+	const bashTool = (body.tools as Array<{ function: { name: string; parameters: { properties: Record<string, unknown> } } }>).find((t) => t.function.name === "bash");
+	assert.ok("command" in bashTool!.function.parameters.properties);
+	const readTool = (body.tools as Array<{ function: { name: string; parameters: { properties: Record<string, unknown> } } }>).find((t) => t.function.name === "read");
+	assert.ok("path" in readTool!.function.parameters.properties);
 });
 
 test("enforceOpencodeFingerprint: Bash lowercased without dup, host tools kept", () => {

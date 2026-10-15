@@ -558,7 +558,7 @@ test("degrade e2e: kilo 400 bad request recovers by clamping tokens and falling 
    const largePrompt = responsesBody(RESPONSES_MODEL, "large prompt text");
    const parsed = JSON.parse(largePrompt);
    parsed.max_output_tokens = 131_072;
-   rememberGateRejection(parsed, "/zen/v1/responses", 403, GATE_BODY);
+   rememberGateRejection(parsed, "/inference/v1/responses", 403, GATE_BODY);
    const res = await postResponses(JSON.stringify(parsed));
    assert.equal(res.status, 200, "must recover and succeed with 200");
    const body: Record<string, unknown> = await res.json();

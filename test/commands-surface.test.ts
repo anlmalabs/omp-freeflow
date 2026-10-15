@@ -200,7 +200,7 @@ test("command spec: /freeflow test opencode tests upstream OpenCode directly", a
 
   await spec.handler("test opencode", ctx);
 
-  assert.equal(calledUrl, "https://opencode.ai/zen/v1/models");
+		assert.equal(calledUrl, "https://opencode.ai/inference/v1/models");
   assert.ok(
    notifications.some((n) => n.message.includes("OpenCode endpoint ok (HTTP 200")),
    `expected OpenCode endpoint ok notify, got: ${JSON.stringify(notifications)}`,
@@ -230,7 +230,7 @@ test("command spec: /freeflow test opencode --chat performs a chat probe", async
 
   await spec.handler("test opencode --chat", ctx);
 
-  assert.equal(calledUrl, "https://opencode.ai/zen/v1/chat/completions");
+		assert.equal(calledUrl, "https://opencode.ai/inference/v1/chat/completions");
   assert.equal(calledInit?.method, "POST");
   assert.ok(
    notifications.some((n) => n.message.includes("OpenCode endpoint ok (HTTP 200")),

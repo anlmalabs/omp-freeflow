@@ -11,6 +11,7 @@ import {
 } from "../src/opencode-fingerprint.ts";
 import {
 	ALL_HOST_TOOL_NAMES,
+	COMPAT_FINGERPRINT_SCHEMAS,
 	COMPAT_TOOL_DESCRIPTION,
 	OMP_CUSTOM_TOOL_NAMES,
 	OMP_HIDDEN_TOOL_NAMES,
@@ -249,7 +250,7 @@ test("ensureMessagesFingerprintTools: OMP caller gets real defs, Pi caller keeps
 	const piBash = piTools.find((t) => t.name === "bash");
 	assert.ok(piBash);
 	assert.ok((piBash.description as string).includes("never be invoked"), "Pi keeps the empty placeholder");
-	assert.deepEqual(piBash.input_schema, { type: "object", properties: {} });
+	assert.deepEqual(piBash.input_schema, COMPAT_FINGERPRINT_SCHEMAS.bash);
 });
 
 test("enforceOpencodeFingerprint: messages path translates caller tools and injects placeholder set", () => {
