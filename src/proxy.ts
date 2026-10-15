@@ -939,31 +939,42 @@ function killViaProcNet(port: number): boolean {
 
 export async function killPortHolder(port: number): Promise<boolean> {
  if (!Number.isInteger(port) || port < 1 || port > 65535) return false;
- try {
-  if (process.platform === "win32") {
-   try {
-    const out = execSync(`netstat -ano | findstr :${port}`, {
-     encoding: "utf8",
-     timeout: 3000,
-     windowsHide: true,
-    }) as string;
-    for (const line of out.split("\n")) {
-     if (!line.includes("LISTENING")) continue;
-     const parts = line.trim().split(/\s+/);
-     // Match the port on the Local Address column only — a raw
-     // substring match can hit longer ports (:2818 vs :28180).
-     if (!parts[1] || !parts[1].endsWith(`:${port}`)) continue;
-     const pid = parts[parts.length - 1];
-     if (!pid || !/^\d+$/.test(pid)) continue;
-     // Windows netstat report: 127.0.0.1:38180 ... LISTENING/PID
-     if (Number(pid) === process.pid) continue; // never self-kill
-     execSync(`taskkill /F /PID ${pid}`, { timeout: 3000, stdio: "ignore", windowsHide: true });
-     return true;
-    }
-   } catch { }
-   return false;
-  }
-  try {
+	try {
+		try {
+			await fetch(`http://${HOST}:${port}/_shutdown`, {
+				method: "POST",
+				signal: AbortSignal.timeout(300),
+			});
+			for (let i = 0; i < 6; i++) {
+				await new Promise<void>((r) => setTimeout(r, 50));
+				if (!(await isProxyAlive(port))) return true;
+			}
+		} catch { }
+		if (process.platform === "win32") {
+			try {
+				const out = execSync(`netstat -ano | findstr :${port}`, {
+					encoding: "utf8",
+					timeout: 3000,
+					windowsHide: true,
+				}) as string;
+				let killed = false;
+				for (const line of out.split("\n")) {
+					if (!line.includes("LISTENING")) continue;
+					const parts = line.trim().split(/\s+/);
+					if (!parts[1] || !parts[1].endsWith(`:${port}`)) continue;
+					const pid = parts[parts.length - 1];
+					if (!pid || !/^\d+$/.test(pid)) continue;
+					if (Number(pid) === process.pid) continue; // never self-kill
+					try {
+						execSync(`taskkill /F /T /PID ${pid}`, { timeout: 3000, stdio: "ignore", windowsHide: true });
+						killed = true;
+					} catch { }
+				}
+				if (killed) return true;
+			} catch { }
+			return false;
+		}
+		try {
    const out = execSync(`lsof -ti tcp:${port} 2>/dev/null || fuser -n tcp ${port} 2>/dev/null`, {
     encoding: "utf8",
     timeout: 3000,

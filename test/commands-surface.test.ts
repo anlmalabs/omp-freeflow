@@ -1002,3 +1002,24 @@ test("command spec: /freeflow status and cline accounts handle a fresh empty poo
   });
  });
 });
+
+test("command spec: /freeflow autoupdate toggles and status shows it", async () => {
+	await withSavedDiskState(async () => {
+		setActiveRelayState({ mode: "auto", enabled: true, url: "", relays: [], autoUpdate: false }, false);
+		const spec = createCommandSpec(mockApi);
+		const { ctx: ctx1, notifications: notes1 } = createMockContext();
+		await spec.handler("autoupdate on", ctx1);
+		assert.equal(loadRelayState().autoUpdate, true);
+		assert.ok(notes1.some((n) => n.message.includes("Auto-update enabled")));
+
+		const { ctx: ctx2, notifications: notes2 } = createMockContext();
+		await spec.handler("status", ctx2);
+		const statusText = notes2.map((n) => n.message).join("\n");
+		assert.ok(statusText.includes("auto-update: on"));
+
+		const { ctx: ctx3, notifications: notes3 } = createMockContext();
+		await spec.handler("autoupdate off", ctx3);
+		assert.equal(loadRelayState().autoUpdate, false);
+		assert.ok(notes3.some((n) => n.message.includes("Auto-update disabled")));
+	});
+});

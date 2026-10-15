@@ -1,6 +1,6 @@
 # pi-freeflow
 
-> 37 free models with up to 1M context. No API keys to manage. Add your own relays to spread requests across more IPs.
+> 34 free models with up to 1M context. No API keys to manage. Add your own relays to spread requests across more IPs.
 
 Thin by design: a model list, a relay proxy, and a log. The host (`pi-ai`) handles thinking, normalization, and provider behavior.
 
@@ -16,7 +16,7 @@ Thin by design: a model list, a relay proxy, and a log. The host (`pi-ai`) handl
 
 | Feature | What it does | Cost |
 | :--- | :--- | :--- |
-| **37 free models** | 11 from OpenCode Zen, 15 from KiloCode Gateway, 2 from Cline, 9 from OVHcloud AI Endpoints, context windows up to 1M. Full list below. | **$0** |
+| **34 free models** | 10 from OpenCode Zen, 14 from KiloCode Gateway, 2 from Cline, 8 from OVHcloud AI Endpoints, context windows up to 1M. Full list below. | **$0** |
 | **Relay pool** | Route requests through your own Cloudflare Workers, Deno Deploy, and Vercel Edge relays. Traffic spreads across the pool, or stays on one sticky relay. A relay that rate-limits, times out, or drops the connection cools down while healthy ones take its traffic. | **$0** beyond your platforms' free tiers |
 | **Automatic fallback** | When every relay is cooling down, requests go direct to upstream instead of failing. | **$0** |
 | **Short model names** | Most models have a slash-free, colon-free alias, plus an optional `:effort` suffix for thinking depth. You type `freeflow/<name>`; the two Cline models have no alias and must be typed in full. | **$0** |
@@ -197,13 +197,13 @@ The same command set works identically in OMP and Pi:
 
 ---
 
-### 37 models, one command
+### 34 models, one command
 
 ```bash
 /model → freeflow → pick
 ```
 
-#### OpenCode Zen (11 models), Responses and Chat API
+#### OpenCode Zen (10 models), Responses and Chat API
 
 Good defaults for long coding sessions and agentic work.
 
@@ -219,9 +219,8 @@ Good defaults for long coding sessions and agentic work.
 | `space-bunny-free` | Stealth preview (lab undisclosed) | **1M** (1.048.576) | **512K** (524.288) | `low … max` | ✅ |
 | `longcat-2.5-preview-free` | Meituan LongCat | **1M** (1.000.000) | **131K** (131.072) | `minimal … max` | ✅ |
 | `step-5-preview-free` | StepFun | **1M** (1.000.000) | **64K** (65.536) | `low … high` | ✅ |
-| `ling-3.1-flash-free` | Inclusion AI | **262K** (262.144) | **32K** (32.768) | `minimal … max` | ❌ |
 
-#### KiloCode Gateway (15 models), OpenRouter compatible
+#### KiloCode Gateway (14 models), OpenRouter compatible
 
 Keyless access. Short aliases work for every row (the full ID is in parentheses).
 
@@ -241,7 +240,6 @@ Keyless access. Short aliases work for every row (the full ID is in parentheses)
 | `glyph-cluster` (`stealth/glyph-cluster`) | Stealth preview (lab undisclosed) | **256K** (256.000) | **256K** (256.000) | `minimal…xhigh`\* | ❌ |
 | `step-5-preview:kilo` (`stepfun/...:free`) | StepFun | **1M** (1.000.000) | **64K** (65.536) | `minimal…xhigh`\* | ✅ |
 | `inkling-small` (`thinkingmachines/inkling-small:free`) | Thinking Machines | **1M** (1.048.576) | **262K** (262.144) | `minimal…xhigh`\* | ✅ |
-| `ling-3.1-flash:kilo` (`inclusionai/ling-3.1-flash`) | Inclusion AI | **262K** (262.144) | **32K** (32.768) | `minimal…xhigh`\* | ❌ |
 
 \* Levels are forwarded as-is through the OpenRouter-style nested `reasoning` parameter; effort mapping is decided by each model. MiMo collapses `minimal→low` and `xhigh→high` upstream, so its selector shows 5 labels but only 3 distinct effort values.
 
@@ -257,13 +255,13 @@ Each account can only be saved once: an extra login for an account you already h
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `cline-free/muse-spark-1.3-contributor` | Meta Superintelligence Labs | **1M** (1.048.576) | **131K** (131.072) | `minimal…xhigh`\* | ✅ |
 | `z-ai/glm-5.3-flash` | Zhipu AI | **1M** (1.048.576) | **131K** (131.072) | `low/high/max` | ✅ |
-
+#### OVHcloud AI Endpoints (8 models), OpenAI compatible
 #### OVHcloud AI Endpoints (9 models), OpenAI compatible
 
 Anonymous access — no account, no key, nothing to sign in to. Direct only (never through the relay pool), because OVH has no per-IP gate for relays to route around. OVH rate-limits anonymous callers per IP, so a burst of parallel subagents can hit `429 API rate limit exceeded`; the model list itself never costs anything.
 
 Pick them with the slash-free short name (the full ID is in parentheses). Only `low` and `high` thinking levels are offered, because those are the two OVH confirmed.
-
+All eight talk the normal chat API. Hosts that prefer the responses API work too — the proxy maps that shape to chat and maps the answer back, so tool calls and streamed output behave exactly as they do on the other providers.
 All nine talk the normal chat API. Hosts that prefer the responses API work too — the proxy maps that shape to chat and maps the answer back, so tool calls and streamed output behave exactly as they do on the other providers.
 
 | Model ID | Creator / Lab | Context | Max Output | Thinking | Vision |
@@ -274,7 +272,6 @@ All nine talk the normal chat API. Hosts that prefer the responses API work too 
 | `qwen3.5-9b` (`ovh-free/Qwen3.5-9B`) | Alibaba Qwen | **256K** (262.144) | **64K** (65.536) | `low/high` | ✅ |
 | `qwen3.6-27b` (`ovh-free/Qwen3.6-27B`) | Alibaba Qwen | **256K** (262.144) | **64K** (65.536) | `low/high` | ✅ |
 | `qwen3.8-27b` (`ovh-free/Qwen3.8-27B`) | Alibaba Qwen | **256K** (262.144) | **32K** (32.768) | `low/high` | ✅ |
-| `mistral-small-3.2` (`ovh-free/Mistral-Small-3.2-24B-Instruct-2506`) | Mistral AI | **128K** (131.072) | **16K** (16.384) | ❌ | ✅ |
 | `mistral-7b-v0.3` (`ovh-free/Mistral-7B-Instruct-v0.3`) | Mistral AI | **64K** (65.536) | **64K** (65.536) | ❌ | ❌ |
 | `llama-3.3-70b` (`ovh-free/Meta-Llama-3_3-70B-Instruct`) | Meta | **128K** (131.072) | **16K** (16.384) | ❌ | ❌ |
 
@@ -369,7 +366,7 @@ pnpm smoke       # verifies extensions/index.ts loads without crashing
 #### Project structure
 
 ```
-src/
+├── models.ts                # 34-model catalog definitions
 ├── index.ts                 # extension entry, lifecycle hooks
 ├── models.ts                # 37-model catalog definitions
 ├── catalog.ts               # model catalog cache (24h disk)

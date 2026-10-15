@@ -45,7 +45,6 @@ export const OVH_CHAT_URL = `${OVH_API_BASE}/chat/completions`;
 
 // ── Network & Server defaults ───────────────────────────────────────
 export const DEFAULT_PORT = 28180;
-export const LEGACY_PORT = 18080;
 export const HOST = "127.0.0.1";
 
 export function resolvePort(): number {

@@ -193,9 +193,9 @@ test("user flow [1/6] fresh install registers 37 models, binds a proxy, and onbo
    async (url: unknown, init?: RequestInit) => {
     const u = String(url);
     if (u.startsWith(localPrefix)) return realFetch(u, init);
-    // Force the legacy/default port probes to see "no daemon" so a
+    // Force the default port probe to see "no daemon" so a
     // possibly-running real daemon is never reused by the extension.
-    if (u.includes("127.0.0.1:18080") || u.includes("127.0.0.1:28180")) {
+    if (u.includes("127.0.0.1:28180")) {
      throw new Error("no daemon (test override)");
     }
     // Everything else external (registry/catalog): benign response.

@@ -8,13 +8,13 @@
  * detection) is intact.
  *
  * Purely hermetic: global fetch is mocked, and test/setup.mjs re-roots every
- * data file under a fresh tmp dir, so no real network, no real 28180/18080
+ * data file under a fresh tmp dir, so no real network, no real 28180
  * binding, and no ~/.pi/agent writes. user-flow-env.ts (imported first) points
  * the extension at a dedicated TEST_PROXY_PORT so activation never probes a
  * live daemon.
  */
 // MUST be literal first import: sets the proxy-port env (TEST_PROXY_PORT) so
-// src/config.ts resolves PORT to a dedicated test port, avoiding 28180/18080.
+// src/config.ts resolves PORT to a dedicated test port, avoiding 28180.
 import "./user-flow-env.ts";
 
 import test from "node:test";

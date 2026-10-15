@@ -28,7 +28,8 @@ All commands are available inside the OMP or Pi TUI via `/freeflow`:
 | `/freeflow trace [req-id]` | Tail logs filtered by request correlation ID |
 | `/freeflow refresh` | Force reload models from live upstream APIs |
 | `/freeflow reload` | Alias of `refresh` (`models` is accepted too) |
-| `/freeflow update` | Check for and install a package update |
+| `/freeflow update` | Check for and install a package update (restarts daemon automatically on success) |
+| `/freeflow autoupdate [on &vert; off]` | Toggle or view automatic background updates (`/freeflow update auto on &vert; off` also works) |
 | `/freeflow kill` | Shut the proxy daemon down; the next freeflow request restarts it (aliases `stop`, `shutdown`) |
 | `/freeflow debug on &vert; off` | Toggle full HTTP lifecycle debug logging |
 | `/freeflow cline login` | Sign in through the browser, save to the per-user pool |

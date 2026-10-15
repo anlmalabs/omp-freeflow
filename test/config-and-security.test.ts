@@ -10,7 +10,6 @@ import {
  ALLOWED_METHODS,
  ALLOWED_PATH_PATTERN,
  DEFAULT_PORT,
- LEGACY_PORT,
  OPENCODE_USER_AGENT_ENV,
  OPENCODE_VERSION_CACHE_ENV,
  OPENCODE_VERSION_FALLBACK,
@@ -121,11 +120,6 @@ test("resolvePort honors the source-derived env override and falls back to defau
    delete process.env[actualKey];
   }
  }
-});
-
-test("LEGACY_PORT is defined as 18080 for backward compatibility", () => {
- assert.equal(LEGACY_PORT, 18080);
- assert.equal(DEFAULT_PORT, 28180);
 });
 
 test("OpenCode session and request IDs match required OpenCode schema", () => {

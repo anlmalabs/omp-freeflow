@@ -48,7 +48,8 @@ export interface RelayState {
  enabled: boolean;
  url: string;
  relays: KnownRelay[];
- hideWidget?: boolean;
+	hideWidget?: boolean;
+	autoUpdate?: boolean;
 }
 export type LogLevel = "debug" | "info" | "warn" | "error" | "audit";
 

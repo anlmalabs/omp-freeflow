@@ -9,6 +9,10 @@ Unless a line says otherwise, every result below was reproduced against
 `https://opencode.ai/zen/v1` on 2026-10-08. Each row is a controlled
 comparison: one variable changed, same request otherwise.
 
+::: info 2026-10-15 Gateway Migration
+OpenCode migrated keyless free-tier traffic from `/zen/v1` to `/inference/v1` (`/inference/v1/chat/completions` and `/inference/v1/responses`). The new gateway requires `Authorization: Bearer public`, non-empty tool parameter schemas, and omission of `x-opencode-request: msg_*` headers. pi-freeflow handles all of these transparently.
+:::
+
 ## The refusal
 
 A refused request answers `403` with a plain JSON envelope:

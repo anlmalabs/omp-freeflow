@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.37.0
+
+### Minor Changes
+
+- **Auto-Update Capability**: Added the `/freeflow autoupdate on|off` command (and `/freeflow update auto on|off`). When enabled, background update checks automatically download and install new versions, seamlessly restarting the proxy daemon.
+- **Automatic Daemon Recovery on Version Mismatch**: When the client detects an outdated running proxy daemon (or after an update), it automatically stops the stale daemon and restarts with the current package version, eliminating manual intervention and stale port locks.
+- **Documentation Sync**: Synchronized all documentation, specs, and routing tables to reflect the 34 verified free models across OpenCode Zen (10), KiloCode Gateway (14), Cline (2), and OVHcloud AI Endpoints (8).
+- **Self-Hosted VPS Relay Option**: Added setup guidance and documentation for self-hosting an egress relay pool on a VPS using [trefeon/warp-relay-pool](https://github.com/trefeon/warp-relay-pool).
+
 ## 1.36.3
 
 ### Patch Changes

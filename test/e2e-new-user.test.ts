@@ -5,7 +5,7 @@
  * 1. Fresh bootstrap & provider registration (33 models on default port 28180)
  * 2. CLI exit safety (server.unref() allows installer/CLI commands to exit cleanly)
  * 3. Multi-session daemon reuse (zero-duplicate single-port architecture)
- * 4. Legacy migration & dual-probe backward compatibility (18080 fallback)
+ * 4. Single-port architecture (default port 28180)
  * 5. Self-healing daemon recovery (ensureDaemon restarts dead proxy)
  * 6. Dual-upstream routing matrix (OpenCode Zen vs KiloCode Gateway)
  * 7. Relay pool lifecycle (ensureRelay, removeRelay, mode toggles, atomic persistence)

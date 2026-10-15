@@ -6,7 +6,7 @@
  * src/config.ts / src/logger.ts source (never retyping redacted identifiers)
  * and sets them BEFORE src/config.ts is evaluated, so the extension's initial
  * proxy binds a dedicated test port instead of probing/reusing a possibly
- * running real daemon on 28180/18080, and http loopback relays are accepted.
+ * running real daemon on 28180, and http loopback relays are accepted.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -29,7 +29,7 @@ if (!unsafeMatch) throw new Error("src/config.ts must define ALLOW_UNSAFE_RELAY_
 const logLevelMatch = /process\.env\.([A-Z0-9_]+)_LOG_LEVEL/.exec(loggerSrc);
 if (!logLevelMatch) throw new Error("src/logger.ts must read a *_LOG_LEVEL env var");
 
-/** Alternate test port — never 28180/18080, so a real daemon is not reused. */
+/** Alternate test port — never 28180, so a real daemon is not reused. */
 export const TEST_PROXY_PORT = 29751;
 
 // Disable detached-daemon spawn in tests — they use spawnFakeDaemon or in-process servers.
