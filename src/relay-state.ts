@@ -1,7 +1,8 @@
 /**
  * Persistent relay state manager and failover ordering for pi-freeflow
  *
- * Handles atomic state writes to ~/.pi/agent/pi-freeflow-relay-state.json.
+ * Handles atomic state writes to pi's agent dir (PI_CODING_AGENT_DIR,
+ * default ~/.pi/agent) under pi-freeflow-relay-state.json.
  */
 
 import { randomUUID } from "node:crypto";

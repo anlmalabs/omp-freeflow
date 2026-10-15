@@ -295,19 +295,34 @@ export const STRIP_HEADERS = new Set([
 ]);
 
 /** Env override that re-roots ALL pi-freeflow data files (tests/CI sandbox).
- *  Unset → ~/.pi/agent. */
+ *  Unset → pi's agent dir (PI_CODING_AGENT_DIR, else ~/.pi/agent). */
 export const DATA_DIR_ENV = "PI_FREEFLOW_DATA_DIR";
+
+/** Env var pi itself uses to re-root its config dir (default ~/.pi/agent).
+ *  Freeflow data files follow it so CI/containers only need to relocate one
+ *  root instead of granting write access to a hardcoded home path. */
+export const AGENT_DIR_ENV = "PI_CODING_AGENT_DIR";
 
 function dataDirOverride(): string | null {
  const d = process.env[DATA_DIR_ENV];
  return typeof d === "string" && d.trim() !== "" ? d : null;
 }
 
+function defaultAgentDir(): string {
+ const d = process.env[AGENT_DIR_ENV];
+ if (typeof d === "string" && d.trim() !== "") return d;
+ return path.join(homedir(), ".pi", "agent");
+}
+
+function dataFilePath(name: string): string {
+ const override = dataDirOverride();
+ if (override) return path.join(override, name);
+ return path.join(defaultAgentDir(), name);
+}
+
 export function resolveRelayStatePath(): string {
  try {
-  const override = dataDirOverride();
-  if (override) return path.join(override, "pi-freeflow-relay-state.json");
-  return path.join(homedir(), ".pi", "agent", "pi-freeflow-relay-state.json");
+  return dataFilePath("pi-freeflow-relay-state.json");
  } catch {
   return path.join(
    path.dirname(fileURLToPath(import.meta.url)),
@@ -319,9 +334,7 @@ export function resolveRelayStatePath(): string {
 
 export function resolveLogFilePath(): string {
  try {
-  const override = dataDirOverride();
-  if (override) return path.join(override, "pi-freeflow.log");
-  return path.join(homedir(), ".pi", "agent", "pi-freeflow.log");
+  return dataFilePath("pi-freeflow.log");
  } catch {
   return path.join(
    path.dirname(fileURLToPath(import.meta.url)),
@@ -353,14 +366,7 @@ export function resolveDaemonSrcCacheDir(): string {
 
 export function resolveCatalogCachePath(): string {
  try {
-  const override = dataDirOverride();
-  if (override) return path.join(override, "pi-freeflow-catalog-cache.json");
-  return path.join(
-   homedir(),
-   ".pi",
-   "agent",
-   "pi-freeflow-catalog-cache.json",
-  );
+  return dataFilePath("pi-freeflow-catalog-cache.json");
  } catch {
   return path.join(
    path.dirname(fileURLToPath(import.meta.url)),
@@ -372,9 +378,7 @@ export function resolveCatalogCachePath(): string {
 
 export function resolveDebugStatePath(): string {
  try {
-  const override = dataDirOverride();
-  if (override) return path.join(override, "pi-freeflow-debug.json");
-  return path.join(homedir(), ".pi", "agent", "pi-freeflow-debug.json");
+  return dataFilePath("pi-freeflow-debug.json");
  } catch {
   return path.join(
    path.dirname(fileURLToPath(import.meta.url)),
@@ -386,9 +390,7 @@ export function resolveDebugStatePath(): string {
 
 export function resolveUpdateCachePath(): string {
  try {
-  const override = dataDirOverride();
-  if (override) return path.join(override, "pi-freeflow-update.json");
-  return path.join(homedir(), ".pi", "agent", "pi-freeflow-update.json");
+  return dataFilePath("pi-freeflow-update.json");
  } catch {
   return path.join(
    path.dirname(fileURLToPath(import.meta.url)),
@@ -400,9 +402,7 @@ export function resolveUpdateCachePath(): string {
 
 export function resolveOnboardedFlagPath(): string {
  try {
-  const override = dataDirOverride();
-  if (override) return path.join(override, "pi-freeflow-onboarded");
-  return path.join(homedir(), ".pi", "agent", "pi-freeflow-onboarded");
+  return dataFilePath("pi-freeflow-onboarded");
  } catch {
   return path.join(
    path.dirname(fileURLToPath(import.meta.url)),
@@ -414,9 +414,7 @@ export function resolveOnboardedFlagPath(): string {
 
 export function resolveUpstreamHealthPath(): string {
  try {
-  const override = dataDirOverride();
-  if (override) return path.join(override, "pi-freeflow-upstream-health.json");
-  return path.join(homedir(), ".pi", "agent", "pi-freeflow-upstream-health.json");
+  return dataFilePath("pi-freeflow-upstream-health.json");
  } catch {
   return path.join(
    path.dirname(fileURLToPath(import.meta.url)),
@@ -428,9 +426,7 @@ export function resolveUpstreamHealthPath(): string {
 
 export function resolveSessionPinPath(): string {
  try {
-  const override = dataDirOverride();
-  if (override) return path.join(override, "pi-freeflow-session-pins.json");
-  return path.join(homedir(), ".pi", "agent", "pi-freeflow-session-pins.json");
+  return dataFilePath("pi-freeflow-session-pins.json");
  } catch {
   return path.join(
    path.dirname(fileURLToPath(import.meta.url)),
