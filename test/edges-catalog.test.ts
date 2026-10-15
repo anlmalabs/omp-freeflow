@@ -251,7 +251,7 @@ test("isFreeCatalogId accepts -free, :free, /free and known ids, rejects paid an
 	assert.equal(isFreeCatalogId("stepfun/step-5-preview-free"), true);
 	assert.equal(isFreeCatalogId("lab/new-model/free"), true);
 	assert.equal(isFreeCatalogId("big-pickle"), true);
-	assert.equal(isFreeCatalogId("inclusionai/ling-3.1-flash"), true);
+	assert.equal(isFreeCatalogId("inclusionai/ling-3.1-flash"), false);
 	assert.equal(isFreeCatalogId("stealth/space-bunny-alpha"), false);
  assert.equal(isFreeCatalogId("claude-fable-5-1"), false);
  assert.equal(isFreeCatalogId("nex-agi/nex-n2.5-pro:free"), false);
@@ -271,7 +271,7 @@ test("isFreeCatalogId accepts -free, :free, /free and known ids, rejects paid an
 	assert.equal(isFreeCatalogId("ovh-free/Qwen3.6-27B"), true);
 	assert.equal(isFreeCatalogId("ovh-free/Qwen3.8-27B"), true);
 	assert.equal(isFreeCatalogId("ovh-free/Mistral-Small-3.2-24B-Instruct-2506"), true);
-	assert.equal(isFreeCatalogId("ovh-free/Mistral-7B-Instruct-v0.3"), true);
+	assert.equal(isFreeCatalogId("ovh-free/Mistral-7B-Instruct-v0.3"), false);
 	assert.equal(isFreeCatalogId("ovh-free/Meta-Llama-3_3-70B-Instruct"), true);
 	assert.equal(isFreeCatalogId("ovh/Mistral-Nemo-Instruct-2407"), false, "an unnamespaced OVH id is not in the catalog");
  assert.equal(isFreeCatalogId(""), false);

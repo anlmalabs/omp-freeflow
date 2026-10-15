@@ -107,6 +107,10 @@ export const DEAD_MODEL_IDS = new Set<string>([
  "cline-free/solar-pro4",
  // ling-3.1-flash-free: removed from upstream free docs (2026-10-15).
  "ling-3.1-flash-free",
+ // inclusionai/ling-3.1-flash: demoted to paid on Kilo (2026-10-15) — answers 401 PAID_MODEL_AUTH_REQUIRED.
+ "inclusionai/ling-3.1-flash",
+ // ovh-free/Mistral-7B-Instruct-v0.3: removed upstream by OVH (2026-10-15) — answers 404 no route matched.
+ "ovh-free/Mistral-7B-Instruct-v0.3",
 ]);
 /**
  * Free-tier allowlist for anything entering the picker via network or stale disk.

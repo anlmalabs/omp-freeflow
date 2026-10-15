@@ -108,16 +108,6 @@ test("2026-09-22 and 2026-09-28 additions route to the correct upstream with ver
  assert.equal(mimo.thinkingLevelMap?.xhigh, "high");
  assert.equal(getModelUpstream("mimo-v2.6-flash-free"), "opencode");
  assert.equal(getModelUpstream("mimo-v2.6-flash"), "opencode");
-	// Ling 3.1 Flash is a hybrid reasoning Kilo model (added 2026-10-07)
-	const lingKilo = getModelDef("inclusionai/ling-3.1-flash");
-	assert.ok(lingKilo);
-	assert.equal(lingKilo.contextWindow, 262_144);
-	assert.equal(lingKilo.maxTokens, 32_768);
-	assert.equal(lingKilo.reasoning, true);
-	assert.deepEqual(lingKilo.input, ["text"]);
-	assert.equal(lingKilo.thinkingFormat, "openrouter");
-	assert.equal(getModelUpstream("inclusionai/ling-3.1-flash"), "kilo");
-	assert.equal(getModelUpstream("ling-3.1-flash:kilo"), "kilo");
 	// Step 5 Preview replaces Step 3.7 Flash on the Kilo free list (2026-10-09)
 	const step = getModelDef("stepfun/step-5-preview-free");
 	assert.ok(step);
@@ -276,8 +266,6 @@ test("catalog spec lock: live-verified ctx/max/reasoning per model", () => {
 	// Added 2026-10-09 (live: Kilo free list isFree:true + keyless chat served; 256K/1M ctx)
 	"stealth/glyph-cluster": { ctx: 256_000, max: 256_000, reasoning: true },
 	"stepfun/step-5-preview-free": { ctx: 1_000_000, max: 65_536, reasoning: true },
-		// Added 2026-10-07 (live: Kilo free list isFree:true + keyless chat 200; 262K ctx)
-		"inclusionai/ling-3.1-flash": { ctx: 262_144, max: 32_768, reasoning: true },
   // Cline direct-only (per-user pool — https://api.cline.bot)
   "cline-free/muse-spark-1.3-contributor": { ctx: 1_048_576, max: 131_072, reasoning: true },
   "z-ai/glm-5.3-flash": { ctx: 1_048_576, max: 131_072, reasoning: true },
@@ -293,7 +281,6 @@ test("catalog spec lock: live-verified ctx/max/reasoning per model", () => {
   "ovh-free/Qwen3.6-27B": { ctx: 262_144, max: 65_536, reasoning: true },
   "ovh-free/Qwen3.8-27B": { ctx: 262_144, max: 32_768, reasoning: true },
   "ovh-free/Mistral-Small-3.2-24B-Instruct-2506": { ctx: 131_072, max: 16_384, reasoning: false },
-  "ovh-free/Mistral-7B-Instruct-v0.3": { ctx: 65_536, max: 65_536, reasoning: false },
   "ovh-free/Meta-Llama-3_3-70B-Instruct": { ctx: 131_072, max: 16_384, reasoning: false },
  };
  for (const [id, { ctx, max, reasoning }] of Object.entries(locked)) {
@@ -310,7 +297,6 @@ test("new alias map resolves to canonical kilo ids", () => {
  assert.equal(resolveCanonicalModelId("inkling-small"), "thinkingmachines/inkling-small:free");
 	assert.equal(resolveCanonicalModelId("glyph-cluster"), "stealth/glyph-cluster");
 	assert.equal(resolveCanonicalModelId("mimo-v2.6-flash"), "mimo-v2.6-flash-free");
-	assert.equal(resolveCanonicalModelId("ling-3.1-flash:kilo"), "inclusionai/ling-3.1-flash");
 	assert.equal(resolveCanonicalModelId("step-5-preview"), "step-5-preview-free");
 	assert.equal(resolveCanonicalModelId("step-5-preview:kilo"), "stepfun/step-5-preview-free");
 });
@@ -341,7 +327,6 @@ test("2026-10-13 OVH lane: every id routes to the ovh upstream, never Zen", () =
  assert.equal(isOvhModel("z-ai/glm-5.3-flash"), false);
  assert.equal(getModelUpstream("muse-spark-1.3-contributor-free"), "opencode");
 });
-
 test("2026-10-13 OVH aliases resolve to the ovh-free catalog ids", () => {
  const aliases: Record<string, string> = {
   "gpt-oss-120b": "ovh-free/gpt-oss-120b",
@@ -351,7 +336,6 @@ test("2026-10-13 OVH aliases resolve to the ovh-free catalog ids", () => {
   "qwen3.6-27b": "ovh-free/Qwen3.6-27B",
   "qwen3.8-27b": "ovh-free/Qwen3.8-27B",
   "mistral-small-3.2": "ovh-free/Mistral-Small-3.2-24B-Instruct-2506",
-  "mistral-7b-v0.3": "ovh-free/Mistral-7B-Instruct-v0.3",
   "llama-3.3-70b": "ovh-free/Meta-Llama-3_3-70B-Instruct",
  };
  for (const [alias, canonical] of Object.entries(aliases)) {
@@ -373,7 +357,6 @@ test("2026-10-13 OVH ids resolve to the bare wire id, prefix stripped after cano
   assert.equal(upstream, upstream.trim(), `${m.id}: no whitespace around the upstream id`);
   assert.ok(!upstream.includes("/"), `${m.id}: the wire id must carry no path separator`);
  }
- // Case must survive verbatim: the OVH listing ships these exact spellings.
  assert.equal(ovhUpstreamModelId("ovh-free/Qwen3.5-397B-A17B"), "Qwen3.5-397B-A17B");
  assert.equal(ovhUpstreamModelId("ovh-free/Meta-Llama-3_3-70B-Instruct"), "Meta-Llama-3_3-70B-Instruct");
  // Regression: a short alias must resolve BEFORE the prefix comes off. The
@@ -384,7 +367,6 @@ test("2026-10-13 OVH ids resolve to the bare wire id, prefix stripped after cano
  assert.equal(ovhUpstreamModelId("gpt-oss-120b"), "gpt-oss-120b");
  assert.equal(ovhUpstreamModelId("qwen3.5-397b"), "Qwen3.5-397B-A17B");
  assert.equal(ovhUpstreamModelId("mistral-small-3.2"), "Mistral-Small-3.2-24B-Instruct-2506");
- assert.equal(ovhUpstreamModelId("mistral-7b-v0.3"), "Mistral-7B-Instruct-v0.3");
  // Every catalog id and every alias must produce a bare, prefix-free id.
  for (const m of OVH_MODELS) {
   for (const candidate of [m.id, resolveCanonicalModelId(m.id)]) {
@@ -392,7 +374,6 @@ test("2026-10-13 OVH ids resolve to the bare wire id, prefix stripped after cano
   }
  }
 });
-
 test("2026-10-13 OVH spec-drift guard: context windows change only with a deliberate edit", () => {
  // OVH publishes one advertised context per model; a silent change upstream
  // must fail here so the catalog is edited on purpose instead of drifting.
@@ -404,7 +385,6 @@ test("2026-10-13 OVH spec-drift guard: context windows change only with a delibe
   "ovh-free/Qwen3.6-27B": 262_144,
   "ovh-free/Qwen3.8-27B": 262_144,
   "ovh-free/Mistral-Small-3.2-24B-Instruct-2506": 131_072,
-  "ovh-free/Mistral-7B-Instruct-v0.3": 65_536,
   "ovh-free/Meta-Llama-3_3-70B-Instruct": 131_072,
  };
  for (const [id, ctx] of Object.entries(lockedCtx)) {
