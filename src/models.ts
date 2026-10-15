@@ -1,8 +1,8 @@
 /**
  * Static model definitions and upstream routing catalogs for pi-freeflow
  *
- * Defines the 37 verified free models (live-verified 2026-10-13):
- * - 11 OpenCode Zen models (2 Responses API + 9 Chat Completions)
+ * Defines the 36 verified free models (live-verified 2026-10-15):
+ * - 10 OpenCode Zen models (2 Responses API + 8 Chat Completions)
  * - 15 KiloCode Keyless Gateway models (OpenRouter format)
  * - 2 Cline direct-only models (per-user pool)
  * - 9 OVHcloud AI Endpoints models (keyless, direct-only)
@@ -199,23 +199,6 @@ export const OPENCODE_MODELS: ModelDef[] = [
   xhigh: null,
   max: null,
  },
- },
- {
-  id: "ling-3.1-flash-free",
-  name: "Ling 3.1 Flash Free [OpenCode]",
-  reasoning: true,
-  contextWindow: 262_144,
-  maxTokens: 32_768,
-  input: ["text"],
-  thinkingLevelMap: {
-   off: null,
-   minimal: "minimal",
-   low: "low",
-   medium: "medium",
-   high: "high",
-   xhigh: "xhigh",
-   max: "max",
-  },
  },
 ];
 
@@ -625,7 +608,6 @@ export const MODEL_ALIASES: Record<string, string> = {
  "longcat-2.5-preview": "longcat-2.5-preview-free",
  "longcat": "longcat-2.5-preview-free",
  "step-5-preview": "step-5-preview-free",
- "ling-3.1-flash": "ling-3.1-flash-free",
  "ling-3.1-flash:kilo": "inclusionai/ling-3.1-flash",
  // provider-prefixed short aliases (slash-normalized)
  "laguna-s-2.1:free": "poolside/laguna-s-2.1:free",

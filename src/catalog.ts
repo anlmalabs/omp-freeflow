@@ -105,6 +105,8 @@ export const DEAD_MODEL_IDS = new Set<string>([
  "cline-free/deepseek-v4.1-flash",
  "cline-free/kimi-k3",
  "cline-free/solar-pro4",
+ // ling-3.1-flash-free: removed from upstream free docs (2026-10-15).
+ "ling-3.1-flash-free",
 ]);
 /**
  * Free-tier allowlist for anything entering the picker via network or stale disk.

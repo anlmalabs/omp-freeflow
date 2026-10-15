@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.36.2
+
+### Patch Changes
+
+- Auto-recover OpenCode Zen 403 FreeTierError: when upstream OpenCode Zen refuses a session with `403 FreeTierError` ("OpenCode's free tier can only be used from within OpenCode"), the local proxy now catches the gate error in-flight and transparently fails over to a healthy KiloCode fallback model on the same wire API, rather than bubbling the 403 back to the coding agent.
+- Prune decommissioned `ling-3.1-flash-free` from the active catalog and add it to the exclusion list, locking the verified catalog to 36 models.
+- Update OpenCode version fallback to 1.19.0.
 ## 1.36.1
 
 ### Patch Changes

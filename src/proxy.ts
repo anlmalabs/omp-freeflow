@@ -80,6 +80,7 @@ import {
 import { pipeUpstreamStream, type StreamCloakOptions } from "./stream-pipe.ts";
 import {
  decideZenRoute,
+ isFreeTierGate,
  isUnprovenSession,
  isUpstreamGated,
  pickFailoverModel,
@@ -560,6 +561,172 @@ async function handleOvhRequest(opts: {
   res.end(JSON.stringify(resp));
  } else if (!res.writableEnded) {
   res.end();
+ }
+}
+
+/**
+ * Keyless gateway handling for Kilo models (both direct Kilo models and
+ * Zen sessions failed over to Kilo). Serves chat completions and responses
+ * natively, repairs tool arguments, and recovers from 400 token overflows.
+ */
+async function handleKiloRequest(opts: {
+ parsedBody: Record<string, unknown>;
+ pathname: string;
+ req: http.IncomingMessage;
+ res: http.ServerResponse;
+ reqId: string;
+ clientRequestedStream: boolean;
+ sessionKey?: string | null;
+}): Promise<void> {
+ const { parsedBody, pathname, req, res, reqId, clientRequestedStream, sessionKey } = opts;
+ const isStream = clientRequestedStream;
+ const kiloController = new AbortController();
+ const kiloArgSchemas = buildArgRepairSchemas(Array.isArray(parsedBody.tools) ? parsedBody.tools : []);
+ const kiloTimeoutId = setTimeout(
+  () => kiloController.abort(upstreamTimeoutError()),
+  UPSTREAM_HEADER_TIMEOUT_MS,
+ );
+ const abortKiloOnClientGone = () => {
+  if (!res.writableEnded) kiloController.abort();
+ };
+ res.once("close", abortKiloOnClientGone);
+ req.once("error", abortKiloOnClientGone);
+ let response: Response;
+ const kiloUrl = pathname.endsWith("/responses") ? KILO_RESPONSES_URL : KILO_CHAT_URL;
+ try {
+  response = await relayFetch(
+   kiloUrl,
+   {
+    method: "POST",
+    headers: {
+     "Content-Type": "application/json",
+    },
+    body: JSON.stringify(parsedBody),
+    signal: kiloController.signal,
+   },
+   reqId,
+  );
+  if (response.status === 400 && !res.writableEnded) {
+   const retryBody = { ...parsedBody };
+   let changed = false;
+   if (typeof retryBody.max_output_tokens === "number" && retryBody.max_output_tokens > 4096) {
+    retryBody.max_output_tokens = 4096;
+    changed = true;
+   }
+   if (typeof retryBody.max_tokens === "number" && retryBody.max_tokens > 4096) {
+    retryBody.max_tokens = 4096;
+    changed = true;
+   }
+   if (retryBody.model === "dots-studio/dots-3-note-preview:free") {
+    retryBody.model = "nvidia/nemotron-3.5-lightning:free";
+    changed = true;
+   }
+   if (changed) {
+    log("warn", `kilo 400 for model ${String(parsedBody.model)} — retrying with clamped tokens`, { model: parsedBody.model }, reqId);
+    try {
+     const retryRes = await relayFetch(
+      kiloUrl,
+      {
+       method: "POST",
+       headers: {
+        "Content-Type": "application/json",
+       },
+       body: JSON.stringify(retryBody),
+       signal: kiloController.signal,
+      },
+      reqId,
+     );
+     if (retryRes.ok) {
+      log("info", `kilo 400 recovery succeeded with model ${String(retryBody.model)}`, { model: retryBody.model }, reqId);
+      response = retryRes;
+     }
+    } catch { }
+   }
+  }
+ } finally {
+  clearTimeout(kiloTimeoutId);
+  res.off("close", abortKiloOnClientGone);
+  req.off("error", abortKiloOnClientGone);
+ }
+ if (response.ok) recordUpstreamSuccess("kilo", { sessionKey });
+
+ if (isStream && response.ok && response.body) {
+  const ct = response.headers.get("content-type") || "text/event-stream";
+  res.writeHead(response.status, {
+   "content-type": ct,
+   "cache-control": "no-cache, no-transform",
+   connection: "keep-alive",
+   "x-accel-buffering": "no",
+  });
+  pipeUpstreamStream(
+   Readable.fromWeb(
+    response.body as unknown as WebReadableStream,
+   ),
+   res,
+   req,
+   reqId,
+   undefined,
+   kiloArgSchemas.size > 0
+    ? {
+     callerHadTools: true,
+     argSchemas: kiloArgSchemas,
+     pathname: pathname.endsWith("/responses") ? "/v1/responses" : "/v1/chat/completions",
+    }
+    : undefined,
+  );
+ } else {
+  let rawText = await response.text();
+  if (response.ok && kiloArgSchemas.size > 0) {
+   rawText = convertSseToJson(rawText, pathname, true, undefined, undefined, undefined, kiloArgSchemas);
+   rawText = repairJsonToolArguments(rawText, pathname, kiloArgSchemas);
+  }
+  const data = withRateLimitHint(response.status, rawText);
+  const ct = response.headers.get("content-type") || "application/json";
+  res.writeHead(response.status, { "content-type": ct });
+  res.end(data);
+ }
+}
+
+/**
+ * In-flight auto-recovery for Zen 403 FreeTierError: immediately fail over
+ * the current request to a healthy Kilo model instead of surfacing 403 to the caller.
+ * Returns true when recovery was dispatched; false when failover is impossible.
+ */
+async function tryZenGateAutoFailover(opts: {
+ parsedBody: Record<string, unknown> | null;
+ pathname: string;
+ req: http.IncomingMessage;
+ res: http.ServerResponse;
+ reqId: string;
+ clientRequestedStream: boolean;
+ sessionKey?: string | null;
+}): Promise<boolean> {
+ const { parsedBody, pathname, req, res, reqId, clientRequestedStream, sessionKey } = opts;
+ if (!parsedBody || res.headersSent || res.writableEnded) return false;
+ const fallbackModel = pickFailoverModel(parsedBody.model);
+ if (!fallbackModel) return false;
+ try {
+  const fromModel = String(parsedBody.model ?? "?");
+  parsedBody.model = fallbackModel;
+  if (pathname.endsWith("/responses")) {
+   prepareResponsesFailoverBody(parsedBody);
+  } else {
+   prepareChatFailoverBody(parsedBody);
+  }
+  log("warn", `zen 403 FreeTierError auto-fixed: failing over ${fromModel} -> ${fallbackModel}`, { model: fromModel, failover: fallbackModel }, reqId);
+  await handleKiloRequest({
+   parsedBody,
+   pathname,
+   req,
+   res,
+   reqId,
+   clientRequestedStream,
+   sessionKey,
+  });
+  return true;
+ } catch (err) {
+  log("warn", `zen 403 FreeTierError auto-failover failed: ${String(err)}`, { error: String(err) }, reqId);
+  return false;
  }
 }
 
@@ -1277,133 +1444,15 @@ export function startProxy(
      // token: the proxy only passes the body and maps the answer.
      await handleClineRequest({ parsedBody, pathname: target.pathname, req, res, reqId, clientRequestedStream });
     } else if (isKilo && parsedBody) {
-     // Header-wait timeout + client-disconnect abort: once headers
-     // arrive the timer is cleared so a long stream is not killed at
-     // the timeout ceiling; the stream phase is owned by
-     // pipeUpstreamStream and its close handling.
-     const kiloController = new AbortController();
-     // Kilo bodies ride verbatim, but its models malform arguments the same
-     // way: capture the caller's schemas so the reply can be repaired too.
-     const kiloArgSchemas = buildArgRepairSchemas(Array.isArray(parsedBody.tools) ? parsedBody.tools : []);
-     const kiloTimeoutId = setTimeout(
-      () => kiloController.abort(upstreamTimeoutError()),
-      UPSTREAM_HEADER_TIMEOUT_MS,
-     );
-     const abortKiloOnClientGone = () => {
-      if (!res.writableEnded) kiloController.abort();
-     };
-     res.once("close", abortKiloOnClientGone);
-     req.once("error", abortKiloOnClientGone);
-     let response: Response;
-     // Kilo serves both wire APIs natively: responses-shaped bodies go to
-     // its responses endpoint, chat bodies to chat completions. Sending a
-     // responses body to the chat URL (or vice versa) would 400.
-     const kiloUrl = target.pathname.endsWith("/responses") ? KILO_RESPONSES_URL : KILO_CHAT_URL;
-     try {
-      response = await relayFetch(
-       kiloUrl,
-       {
-        method: "POST",
-        headers: {
-         // Keyless, like Zen: Kilo's gateway rejects a placeholder bearer
-         // (live 2026-09-22 — "Bearer kilo-free" answers 401 INVALID_TOKEN,
-         // omitting Authorization answers 200 for every free catalog model).
-         "Content-Type": "application/json",
-        },
-        body: JSON.stringify(parsedBody),
-        signal: kiloController.signal,
-       },
-       reqId,
-      );
-      // Kilo 400 recovery: if upstream Kilo rejected the body with 400 (e.g.
-      // prompt + max_output_tokens exceeded model's operational context limit),
-      // retry once with clamped max tokens and fallback to a 1M model.
-      if (response.status === 400 && !res.writableEnded) {
-       const retryBody = { ...parsedBody };
-       let changed = false;
-       if (typeof retryBody.max_output_tokens === "number" && retryBody.max_output_tokens > 4096) {
-        retryBody.max_output_tokens = 4096;
-        changed = true;
-       }
-       if (typeof retryBody.max_tokens === "number" && retryBody.max_tokens > 4096) {
-        retryBody.max_tokens = 4096;
-        changed = true;
-       }
-       if (retryBody.model === "dots-studio/dots-3-note-preview:free") {
-        retryBody.model = "nvidia/nemotron-3.5-lightning:free";
-        changed = true;
-       }
-       if (changed) {
-        log("warn", `kilo 400 for model ${String(parsedBody.model)} — retrying with clamped tokens`, { model: parsedBody.model }, reqId);
-        try {
-         const retryRes = await relayFetch(
-          kiloUrl,
-          {
-           method: "POST",
-           headers: {
-            "Content-Type": "application/json",
-           },
-           body: JSON.stringify(retryBody),
-           signal: kiloController.signal,
-          },
-          reqId,
-         );
-         if (retryRes.ok) {
-          log("info", `kilo 400 recovery succeeded with model ${String(retryBody.model)}`, { model: retryBody.model }, reqId);
-          response = retryRes;
-         }
-        } catch { }
-       }
-      }
-     } finally {
-      clearTimeout(kiloTimeoutId);
-      res.off("close", abortKiloOnClientGone);
-      req.off("error", abortKiloOnClientGone);
-     }
-     if (response.ok) recordUpstreamSuccess("kilo", { sessionKey });
-
-     if (isStream && response.ok && response.body) {
-      const ct =
-       response.headers.get("content-type") || "text/event-stream";
-      res.writeHead(response.status, {
-       "content-type": ct,
-       "cache-control": "no-cache, no-transform",
-       connection: "keep-alive",
-       "x-accel-buffering": "no",
-      });
-      // Kilo is fetched directly (not via the relay pool), so pass undefined as
-      // the issuer: attributing kilo-side stream failures to an unrelated
-      // opencode relay would mark a healthy relay as failed.
-      pipeUpstreamStream(
-       Readable.fromWeb(
-        response.body as unknown as WebReadableStream,
-       ),
-       res,
-       req,
-       reqId,
-       undefined,
-       kiloArgSchemas.size > 0
-        ? {
-         callerHadTools: true,
-         argSchemas: kiloArgSchemas,
-         pathname: target.pathname.endsWith("/responses") ? "/v1/responses" : "/v1/chat/completions",
-        }
-        : undefined,
-      );
-     } else {
-      let rawText = await response.text();
-      if (response.ok && kiloArgSchemas.size > 0) {
-       // Kilo passes `stream` through verbatim, so a non-streaming caller gets
-       // a plain JSON body: the SSE aggregator is a no-op on it, and the JSON
-       // repair is what actually applies here.
-       rawText = convertSseToJson(rawText, target.pathname, true, undefined, undefined, undefined, kiloArgSchemas);
-       rawText = repairJsonToolArguments(rawText, target.pathname, kiloArgSchemas);
-      }
-      const data = withRateLimitHint(response.status, rawText);
-      const ct = response.headers.get("content-type") || "application/json";
-      res.writeHead(response.status, { "content-type": ct });
-      res.end(data);
-     }
+     await handleKiloRequest({
+      parsedBody,
+      pathname: target.pathname,
+      req,
+      res,
+      reqId,
+      clientRequestedStream,
+      sessionKey,
+     });
    } else if (isOvh && parsedBody) {
     // OVH serves chat upstream only (see handleOvhRequest): direct, keyless,
     // no fingerprint, and a responses-path body translated to chat and back.
@@ -1666,6 +1715,18 @@ export function startProxy(
           log("warn", `upstream ${response.status} for model ${String((parsedBody as Record<string, unknown> | null)?.model ?? "?")} via ${servedRelay === "direct" ? "direct upstream" : `relay ${servedRelay}`}`, { status: response.status, model: (parsedBody as Record<string, unknown> | null)?.model, path: req.url, relay: servedRelay }, reqId);
          }
          let rawText = await response.text();
+         if (response.status === 403 && isFreeTierGate(403, rawText)) {
+          const recovered = await tryZenGateAutoFailover({
+           parsedBody: parsedBody as Record<string, unknown> | null,
+           pathname: target.pathname,
+           req,
+           res,
+           reqId,
+           clientRequestedStream,
+           sessionKey,
+          });
+          if (recovered) return;
+         }
          let ct =
           response.headers.get("content-type") ||
           "application/json";
@@ -1824,14 +1885,28 @@ export function startProxy(
       // Gated upstream: a 403 free-tier gate is a final answer, not a
       // stream — buffer it and attach the recovery hint instead of
       // piping it through as a stream body.
+      // Gated upstream: a 403 free-tier gate is auto-recovered via Kilo failover.
+      // If failover is impossible, buffer it and attach the recovery hint.
       if (upstreamRes.status === 403) {
-       const data = withFreeTierHint(403, await upstreamRes.text());
+       const rawText403 = await upstreamRes.text();
+       if (isFreeTierGate(403, rawText403)) {
+        const recovered = await tryZenGateAutoFailover({
+         parsedBody: parsedBody as Record<string, unknown> | null,
+         pathname: target.pathname,
+         req,
+         res,
+         reqId,
+         clientRequestedStream,
+         sessionKey,
+        });
+        if (recovered) return;
+       }
+       const data = withFreeTierHint(403, rawText403);
        const ct403 = upstreamRes.headers.get("content-type") || "application/json";
        res.writeHead(403, { "content-type": ct403 });
        res.end(data);
        return;
       }
-
       const outHeaders: Record<string, string> = {};
       for (const h of ["content-type", "cache-control", "x-request-id"] as const) {
        const v = upstreamRes.headers.get(h);
