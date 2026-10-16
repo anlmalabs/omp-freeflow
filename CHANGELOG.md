@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.38.1
+
+### Patch Changes
+
+- Add the Nemotron 3.5 Super VL free model and enable the max thinking level on Cat Jam — both live-verified through the proxy; align the README and docs with the shipped catalog.
+- The first-run welcome now names the local proxy port actually in use instead of the default port.
+- Streaming requests now pass through replies that arrive in a non-streaming format instead of dropping the answer, concurrent startups share a single connection attempt instead of racing, and a foreign process squatting the local proxy port is no longer mistaken for the daemon we own.
+- Following logs now reads only the lines appended since the last tick instead of re-reading the whole log file every second, so `/freeflow logs --follow` stays light even on large logs.
+- Fix a batch of verified edge cases: non-ASCII streaming text is no longer corrupted when a character spans network chunks, assistant text stays visible on the responses path when it is served from a chat-only upstream, tool-argument repair also works on strict tool schemas, a relay that rejects our auth rolls to the next egress instead of being marked healthy, the update flow restarts the proxy it is actually attached to, and daemon/health state handling no longer loops or reads stale data.
+
 ## 1.38.0
 
 ### Minor Changes
