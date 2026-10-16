@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.38.2
+
+### Patch Changes
+
+- Add Exo to the OpenCode free tier — a live preview model with chat, tools, reasoning, and image input that the official free lineup lists.
+- Add GLM-5.3 Flash and LL Alpha to the OpenCode free tier, and retire Step 5 Preview — it is gone from the Zen lineup and demoted to paid on the Kilo lane, so those entries can no longer be selected.
+
 ## 1.38.1
 
 ### Patch Changes
