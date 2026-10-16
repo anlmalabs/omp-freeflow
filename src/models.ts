@@ -3,7 +3,7 @@
  *
  * Defines the 37 verified free models (live-verified 2026-10-16):
  * - 14 OpenCode Zen models (2 Responses API + 12 Chat Completions)
- * - 14 KiloCode Keyless Gateway models (OpenRouter format)
+ * - 13 KiloCode Keyless Gateway models (OpenRouter format)
  * - 2 Cline direct-only models (per-user pool)
  * - 8 OVHcloud AI Endpoints models (keyless, direct-only)
  */
@@ -282,8 +282,8 @@ export const OPENCODE_MODELS: ModelDef[] = [
  {
   // Added 2026-10-16 (recheck): live free id on the Zen lane, listed on the
   // official free lineup while models.dev already tags it deprecated — the
-  // tag also sits on ids that still serve (mimo-v2.5-free,
-  // muse-spark-1.2-contributor-free), so the live answer decides: chat 200
+  // tag also sits on live ids (muse-spark-1.2-contributor-free) and on
+  // already-dead ones (mimo-v2.5-free), so the live answer decides: chat 200
   // with tools + stream, and the tool call round-trips. Chat is the only
   // native shape (/v1/responses answers 400 "Model does not support this
   // protocol"), so `api` stays unset. Reasoning: the published ladder lists
