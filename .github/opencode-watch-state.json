@@ -1,22 +1,24 @@
 {
-  "lastRelease": "v1.19.0",
+  "lastRelease": "v1.19.2",
   "fileShas": {
     "identifier.ts": "77fc45a0401f03877521a6219e9691377e882a628826cc1489d51bc389c2f2fc",
     "session-id.ts": "ae484a090640a6ed93946ad4fb621545f446b66dcb36d66f6ce0163ca7f1d1f7",
-    "zen.mdx": "0052114b42fa9574cbdc6240e49a0ea1ab484a4242614dd103df37af021ea31e"
+    "zen.mdx": "a8364e1d6f24cb83346859af4f5d83522bfa6dc46c82563f1c169f6c74d4314c"
   },
   "freeModels": [
     "big-pickle",
     "cat-jam-free",
     "deepseek-v4.1-flash-free",
+    "glm-5.3-flash-free",
     "jev-1.13-free",
+    "ll-alpha-free",
     "longcat-2.5-preview-free",
     "mimo-v2.6-flash-free",
     "muse-spark-1.2-contributor-free",
     "muse-spark-1.3-contributor-free",
     "nemotron-3.5-lightning-free",
-    "space-bunny-free",
-    "step-5-preview-free"
+    "nemotron-3.5-super-vl-free",
+    "space-bunny-free"
   ],
-  "lastChecked": "2026-10-15T09:01:52.791Z"
+  "lastChecked": "2026-10-16T08:54:21.892Z"
 }
