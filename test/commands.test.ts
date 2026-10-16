@@ -6,7 +6,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { createCommandSpec, updateStatusBar } from "../src/commands.ts";
-import { LOG_FILE, RELAY_STATE_FILE } from "../src/config.ts";
+import { DEBUG_STATE_FILE, LOG_FILE, RELAY_STATE_FILE } from "../src/config.ts";
+import { _resetDebugStateCacheForTest } from "../src/logger.ts";
 import {
 	getActiveRelayState,
 	setActiveRelayState,
@@ -205,3 +206,118 @@ test("command spec: /freeflow logs --follow tails via setInterval 1s", async () 
 		}
 	}
 });
+
+// /freeflow update restarts the proxy on the attached port (getClientPort() ||
+// PORT), never on the base port, so a walked port cannot leave a stale daemon
+// behind. Proving that needs to observe killPortHolder, which commands.ts (and
+// updater.ts) import as a direct named export from proxy.ts: the suite runs
+// without --experimental-test-module-mocks, so the binding cannot be stubbed,
+// and the only unmocked alternative (bind a port, then kill it) is off limits
+// for unit tests. Skipped deliberately rather than faked.
+test(
+	"command spec: /freeflow update restarts the attached proxy port",
+	{ skip: "killPortHolder is a direct named import; no module-mock flag in the test script" },
+	() => {},
+);
+test("command spec: /freeflow url with a rejected URL warns instead of throwing", async () => {
+	await withSavedDiskState(async () => {
+		setActiveRelayState(
+			{
+				enabled: true,
+				url: "https://relay1.example.com",
+				relays: [{ url: "https://relay1.example.com", label: "relay1" }],
+			},
+			false,
+		);
+		const spec = createCommandSpec(mockApi);
+		const { ctx, notifications } = createMockContext();
+
+		await spec.handler("url http://127.0.0.1:9999", ctx);
+
+		const warn = notifications.find((n) => n.type === "warning");
+		assert.ok(warn, "a rejected relay URL must notify a warning, not throw at the host");
+		assert.match(warn.message, /Relay URL rejected/);
+		const after = getActiveRelayState();
+		assert.equal(after.url, "https://relay1.example.com", "active relay must not change");
+		assert.equal(after.relays.length, 1, "a rejected URL must not be saved");
+	});
+});
+
+test("command spec: /freeflow add (interactive) warns on a rejected URL", async () => {
+	await withSavedDiskState(async () => {
+		setActiveRelayState({ enabled: true, url: "", relays: [] }, false);
+		const spec = createCommandSpec(mockApi);
+		const notifications: Array<{ message: string; type?: string }> = [];
+		const answers = ["http://127.0.0.1:9999", "loopback"];
+		const ui: ExtensionUIContext = {
+			notify(message, type) {
+				notifications.push({ message, type });
+			},
+			setStatus() {},
+			input: () => Promise.resolve(answers.shift() ?? ""),
+			select: (_prompt, options) => Promise.resolve(options[0]),
+		};
+
+		await spec.handler("add", { ui });
+
+		const warn = notifications.find((n) => n.type === "warning");
+		assert.ok(warn, "the interactive picker must surface the rejection as a warning");
+		assert.match(warn.message, /Relay URL rejected/);
+		assert.equal(getActiveRelayState().relays.length, 0, "a rejected URL must not be saved");
+	});
+});
+
+test("command spec: /freeflow debug reports the effective level, not the raw fields", async () => {
+	const hadState = fs.existsSync(DEBUG_STATE_FILE);
+	const stateBefore = hadState ? fs.readFileSync(DEBUG_STATE_FILE, "utf8") : null;
+	const envDebug = process.env.FREEFLOW_DEBUG;
+	const envLevel = process.env.FREEFLOW_LOG_LEVEL;
+	const report = async (env: { debug?: string; level?: string }): Promise<string> => {
+		if (env.debug === undefined) delete process.env.FREEFLOW_DEBUG;
+		else process.env.FREEFLOW_DEBUG = env.debug;
+		if (env.level === undefined) delete process.env.FREEFLOW_LOG_LEVEL;
+		else process.env.FREEFLOW_LOG_LEVEL = env.level;
+		_resetDebugStateCacheForTest();
+		const spec = createCommandSpec(mockApi);
+		const { ctx, notifications } = createMockContext();
+		await spec.handler("debug", ctx);
+		return notifications[notifications.length - 1].message;
+	};
+	try {
+		// Fresh install: nothing is persisted and the logger runs at debug.
+		fs.rmSync(DEBUG_STATE_FILE, { force: true });
+		const fresh = await report({});
+		assert.match(fresh, /Debug status: debug/, "a fresh install runs at debug");
+		assert.match(fresh, /isDebug=true/);
+		assert.ok(!fresh.includes("Debug status: info"), "the raw-file default must not override the effective level");
+
+		// FREEFLOW_DEBUG opts into debug without any persisted field.
+		assert.match(await report({ debug: "1" }), /Debug status: debug/);
+
+		// An explicit level still wins.
+		const warn = await report({ level: "warn" });
+		assert.match(warn, /Debug status: warn/);
+		assert.match(warn, /isDebug=false/);
+	} finally {
+		if (envDebug === undefined) delete process.env.FREEFLOW_DEBUG;
+		else process.env.FREEFLOW_DEBUG = envDebug;
+		if (envLevel === undefined) delete process.env.FREEFLOW_LOG_LEVEL;
+		else process.env.FREEFLOW_LOG_LEVEL = envLevel;
+		_resetDebugStateCacheForTest();
+		if (stateBefore !== null) fs.writeFileSync(DEBUG_STATE_FILE, stateBefore, "utf8");
+		else fs.rmSync(DEBUG_STATE_FILE, { force: true });
+	}
+});
+
+test("command spec: description and completions list every implemented subcommand", () => {
+	const spec = createCommandSpec(mockApi);
+	const description = String(spec.description);
+	const completions = (spec.getArgumentCompletions?.("") ?? []).map((c) => c.value);
+	for (const sub of ["kill", "stop", "shutdown", "url", "models", "reload", "trace", "cline signout", "cline switch"]) {
+		assert.ok(completions.includes(sub), `completions must offer '${sub}'`);
+	}
+	for (const syntax of ["kill|stop|shutdown", "url [value]", "models|reload", "trace [reqId]", "debug on|off|level <level>", "cline signout|switch"]) {
+		assert.ok(description.includes(syntax), `description must document '${syntax}'`);
+	}
+});
+

@@ -520,7 +520,7 @@ export function createCommandSpec(
 ): Omit<RegisteredCommand, "name"> {
  return {
   description:
-   "Relay egress: auto | spread | on | off | hide | show | widget hide/show | status | add <URL> [name] | list | use <URL|name|index> [name] | label <target> <name> | remove <target> | test [target|opencode] [--chat] | export [path] [--include-secrets] | import <path> [--merge|--replace] [--dry-run] | logs [level] [n] | debug on|off | refresh | update [auto on|off] | autoupdate [on|off] | deploy cloudflare | deploy deno | deploy vercel | install-startup | uninstall-startup | cline login [--key] [slot] | cline accounts | cline logout [slot]",
+   "Relay egress: auto | spread | on | off | hide | show | widget hide/show | status | kill|stop|shutdown | add <URL> [name] | list | use <URL|name|index> [name] | label <target> <name> | remove <target> | url [value] | test [target|opencode] [--chat] | export [path] [--include-secrets] | import <path> [--merge|--replace] [--dry-run] | logs [level] [n] | trace [reqId] | debug on|off|level <level> | refresh | models|reload | update [auto on|off] | autoupdate [on|off] | deploy cloudflare | deploy deno | deploy vercel | install-startup | uninstall-startup | cline login [--key] [slot] | cline accounts | cline logout [slot] | cline signout|switch",
   getArgumentCompletions: (prefix: string) =>
    [
     "auto",
@@ -531,6 +531,9 @@ export function createCommandSpec(
     "widget hide",
     "widget show",
     "status",
+    "kill",
+    "stop",
+    "shutdown",
     "add",
     "list",
     "use",
@@ -559,10 +562,19 @@ export function createCommandSpec(
     "cline login --key",
     "cline accounts",
     "cline logout",
+    "cline signout",
+    "cline switch",
     "refresh",
     "models",
+    "reload",
     "logs",
     "debug",
+    "debug on",
+    "debug off",
+    "debug level debug",
+    "debug level info",
+    "debug level warn",
+    "debug level error",
     "trace",
    ]
     .filter((s) => s.startsWith(prefix))
@@ -593,22 +605,6 @@ export function createCommandSpec(
     relayState = withRelayState(updater);
     return relayState;
    };
-   const setRelay = (
-    enabled: boolean,
-    url: string,
-    addLabel?: string,
-   ) => {
-    applyRelayState((s) => {
-     s.enabled = enabled;
-     const cleanUrl = (url || "").trim() || "";
-     s.url = cleanUrl;
-     if (cleanUrl) {
-      ensureRelay(s, cleanUrl, addLabel);
-     }
-     return s;
-    });
-   };
-
    const addRelayInteractive = async () => {
     const inputUrl = (
      await ctx.ui.input(
@@ -628,12 +624,17 @@ export function createCommandSpec(
      )
     )?.trim() || defaultLabel;
 
-    applyRelayState((s) => {
-     const added = ensureRelay(s, inputUrl, inputLabel);
-     s.enabled = true;
-     s.url = added.url;
-     return s;
-    });
+    try {
+     applyRelayState((s) => {
+      const added = ensureRelay(s, inputUrl, inputLabel);
+      s.enabled = true;
+      s.url = added.url;
+      return s;
+     });
+    } catch (e) {
+     ctx.ui.notify((e as Error).message, "warning");
+     return;
+    }
     persist();
     flash();
     ctx.ui.notify(
@@ -1275,7 +1276,7 @@ export function createCommandSpec(
          }
         }
         if (code === 0) {
-         try { await killPortHolder(PORT); } catch { }
+         try { await killPortHolder(getClientPort() || PORT); } catch { }
          ctx.ui.notify(`Updated to ${latest} and restarted proxy daemon`, "info");
         } else {
          ctx.ui.notify(
@@ -1442,13 +1443,17 @@ export function createCommandSpec(
      }
     } else {
      const st = loadDebugState();
-     const cur = st?.debug
-      ? "debug (ON)"
-      : st?.level ||
-      process.env.FREEFLOW_LOG_LEVEL ||
-      "info";
+     const minLevel = getMinLogLevel();
+     // Report the level the logger actually filters at, not the raw fields: a
+     // fresh install (no state file) and FREEFLOW_DEBUG=1 both run at debug
+     // without either being persisted anywhere.
+     const effective =
+      (Object.keys(LOG_LEVEL_ORDER) as LogLevel[]).find(
+       (level) => LOG_LEVEL_ORDER[level] === minLevel,
+      ) ?? "info";
+     const cur = st?.debug ? "debug (ON)" : effective;
      ctx.ui.notify(
-      `Debug status: ${cur}\nFile: ${DEBUG_STATE_FILE}\nMinLevel: ${getMinLogLevel()} | isDebug=${isDebugEnabled()}\nUsage: /freeflow debug on|off | /freeflow debug level debug`,
+      `Debug status: ${cur}\nFile: ${DEBUG_STATE_FILE}\nMinLevel: ${minLevel} | isDebug=${isDebugEnabled()}\nUsage: /freeflow debug on|off | /freeflow debug level debug`,
       "info",
      );
     }
@@ -1850,13 +1855,18 @@ export function createCommandSpec(
       relayState.url || "",
      ));
     const cleanInput = (input || "").trim() || "";
-    applyRelayState((s) => {
-     s.url = cleanInput;
-     if (cleanInput) {
-      ensureRelay(s, cleanInput, shortRelayLabel(cleanInput, s.relays));
-     }
-     return s;
-    });
+    try {
+     applyRelayState((s) => {
+      s.url = cleanInput;
+      if (cleanInput) {
+       ensureRelay(s, cleanInput, shortRelayLabel(cleanInput, s.relays));
+      }
+      return s;
+     });
+    } catch (e) {
+     ctx.ui.notify((e as Error).message, "warning");
+     return;
+    }
     persist();
     flash();
    } else if (sub === "deploy") {
