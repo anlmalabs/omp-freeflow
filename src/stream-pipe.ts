@@ -443,6 +443,53 @@ function cloakStreamResponsesObject(resp: unknown, cloak: StreamCloakOptions): v
 }
 
 /**
+ * Terminal chunk for chat choice: absorb any tool-call argument fragment
+ * riding the finish_reason chunk into the buffered prefix, then re-emit every
+ * buffered tool call's whole argument packet, repaired.
+ * Returns true if delta was mutated.
+ */
+function flushChatTerminalToolCalls(
+ d: Record<string, unknown>,
+ state: SseStreamCloakState,
+ cloak: StreamCloakOptions,
+ flushedIndices: Set<number>,
+): boolean {
+ if (state.chatArgsByIndex.size === 0) return false;
+
+ for (const tc of Array.isArray(d.tool_calls) ? d.tool_calls : []) {
+  if (!tc || typeof tc !== "object" || Array.isArray(tc)) continue;
+  const rec = tc as Record<string, unknown>;
+  const idx = typeof rec.index === "number" ? rec.index : 0;
+  const fn = rec.function;
+  const fnRec = fn && typeof fn === "object" && !Array.isArray(fn) ? (fn as Record<string, unknown>) : null;
+  if (fnRec && state.chatArgsByIndex.has(idx) && typeof fnRec.arguments === "string") {
+   state.chatArgsByIndex.set(idx, (state.chatArgsByIndex.get(idx) ?? "") + fnRec.arguments);
+  }
+ }
+
+ const flushed: unknown[] = [];
+ for (const [idx, args] of state.chatArgsByIndex) {
+  const name = state.chatNameByIndex.get(idx);
+  if (name === undefined) continue;
+  flushedIndices.add(idx);
+  flushed.push({ index: idx, type: "function", function: { name, arguments: repairToolArguments(name, args, cloak.argSchemas) } });
+ }
+ state.chatArgsByIndex.clear();
+ state.chatNameByIndex.clear();
+
+ if (flushed.length === 0) return false;
+
+ const remaining = (Array.isArray(d.tool_calls) ? d.tool_calls : []).filter((tc) => {
+  if (!tc || typeof tc !== "object" || Array.isArray(tc)) return true;
+  const rec = tc as Record<string, unknown>;
+  const idx = typeof rec.index === "number" ? rec.index : 0;
+  return !flushedIndices.has(idx);
+ });
+ d.tool_calls = [...remaining, ...flushed];
+ return true;
+}
+
+/**
  * Rewrite one Chat Completions SSE block: drop injected delta.tool_calls
  * (including nameless argument continuations via per-index tracking), restore
  * surviving names. Tool-less callers lose all tool_calls with arguments
@@ -489,20 +536,8 @@ function rewriteChatBlock(
   // Indices flushed on this block: their arguments are final, so the
   // per-delta loop below must not buffer them a second time.
   const flushedIndices = new Set<number>();
-  if (c.finish_reason && state.chatArgsByIndex.size > 0) {
-   const flushed: unknown[] = [];
-   for (const [idx, args] of state.chatArgsByIndex) {
-    const name = state.chatNameByIndex.get(idx);
-    if (name === undefined) continue;
-    flushedIndices.add(idx);
-    flushed.push({ index: idx, type: "function", function: { name, arguments: repairToolArguments(name, args, cloak.argSchemas) } });
-   }
-   state.chatArgsByIndex.clear();
-   state.chatNameByIndex.clear();
-   if (flushed.length > 0) {
-    d.tool_calls = [...(Array.isArray(d.tool_calls) ? d.tool_calls : []), ...flushed];
-    changed = true;
-   }
+  if (c.finish_reason && flushChatTerminalToolCalls(d, state, cloak, flushedIndices)) {
+   changed = true;
   }
   if (!Array.isArray(d.tool_calls)) {
    if (Object.keys(d).length > 0) allDeltasEmpty = false;

@@ -534,6 +534,48 @@ test("chat stream: fragmented arguments are buffered and repaired on the termina
 	assert.deepEqual(args.list.map((p) => p.phase), ["Research", "Synthesis"]);
 });
 
+test("chat stream: argument fragment riding the terminal finish_reason chunk is absorbed without rotation or duplication", () => {
+	const half = Math.floor(REPORTED.length / 2);
+	const body = runBlocks(
+		[
+			`data: ${JSON.stringify({ choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: "c1", type: "function", function: { name: "todo", arguments: REPORTED.slice(0, half) } }] } }] })}`,
+			`data: ${JSON.stringify({ choices: [{ index: 0, delta: { tool_calls: [{ index: 0, function: { arguments: REPORTED.slice(half) } }] }, finish_reason: "tool_calls" }] })}`,
+		],
+		"/v1/chat/completions",
+	);
+	const flushed = body.split("\n\n").filter((block) => block.includes('"finish_reason":"tool_calls"'));
+	assert.equal(flushed.length, 1, "one terminal chunk carries the flushed call");
+	const chunk = JSON.parse(flushed[0].slice(flushed[0].indexOf("data: ") + 6));
+	assert.equal(chunk.choices[0].delta.tool_calls.length, 1, "exactly one tool call on terminal chunk");
+	const rawArgs = chunk.choices[0].delta.tool_calls[0].function.arguments;
+	const args = JSON.parse(rawArgs) as { list: Array<{ phase: string }> };
+	assert.deepEqual(args.list.map((p) => p.phase), ["Research", "Synthesis"]);
+});
+
+test("chat stream: terminal chunk fragment with multibyte CJK, emoji, and escaped quotes resolves cleanly", () => {
+	const payload = JSON.stringify({
+		op: "init",
+		items: ["研究 🚀 \"quoted text\" \n newline", "東京🗼"],
+	});
+	const splitIdx = payload.indexOf("東京");
+	const part1 = payload.slice(0, splitIdx);
+	const part2 = payload.slice(splitIdx);
+	const body = runBlocks(
+		[
+			`data: ${JSON.stringify({ choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: "c1", type: "function", function: { name: "todo", arguments: part1 } }] } }] })}`,
+			`data: ${JSON.stringify({ choices: [{ index: 0, delta: { tool_calls: [{ index: 0, function: { arguments: part2 } }] }, finish_reason: "tool_calls" }] })}`,
+		],
+		"/v1/chat/completions",
+	);
+	const flushed = body.split("\n\n").filter((block) => block.includes('"finish_reason":"tool_calls"'));
+	assert.equal(flushed.length, 1);
+	const chunk = JSON.parse(flushed[0].slice(flushed[0].indexOf("data: ") + 6));
+	assert.equal(chunk.choices[0].delta.tool_calls.length, 1);
+	const args = JSON.parse(chunk.choices[0].delta.tool_calls[0].function.arguments) as { op: string; items: string[] };
+	assert.equal(args.op, "init");
+	assert.deepEqual(args.items, ["研究 🚀 \"quoted text\" \n newline", "東京🗼"]);
+});
+
 test("chat stream: a tool the caller never declared a schema for keeps streaming incrementally", () => {
 	// A tool absent from argSchemas (here: not one this request declared) must
 	// not be buffered — its arguments flow through on the original delta. Every
