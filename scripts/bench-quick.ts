@@ -86,19 +86,20 @@ interface BenchRow {
  notes: string;
 }
 
-/* Quick pass: 14 cells x {direct, relay} x 1 attempt = 28 rows. */
+/* Quick pass: 12 cells x {direct, relay} x 1 attempt = 24 rows. */
 const CELLS: Cell[] = [
  { model: "muse-spark-1.2-contributor-free", effortLabel: "xhigh", effortSent: "xhigh", perPath: 1 },
  { model: "muse-spark-1.2-contributor-free", effortLabel: "high", effortSent: "high", perPath: 1 },
  { model: "big-pickle", effortLabel: "max", effortSent: "max", perPath: 1 },
  { model: "big-pickle", effortLabel: "high", effortSent: "high", perPath: 1 },
- { model: "mimo-v2.5-free", effortLabel: "high", effortSent: "high", perPath: 1 },
  { model: "mimo-v2.6-flash-free", effortLabel: "high", effortSent: "high", perPath: 1 },
  { model: "nemotron-3-ultra-free", effortLabel: "high", effortSent: "high", perPath: 1 },
  { model: "nemotron-3.5-lightning-free", effortLabel: "high", effortSent: "high", perPath: 1 },
  { model: "space-bunny-free", effortLabel: "high", effortSent: "high", perPath: 1 },
  { model: "longcat-2.5-preview-free", effortLabel: "high", effortSent: "high", perPath: 1 },
  { model: "ling-3.1-flash-free", effortLabel: "high", effortSent: "high", perPath: 1 },
+ { model: "glm-5.3-flash-free", effortLabel: "high", effortSent: "high", perPath: 1 },
+ { model: "beam-free", effortLabel: "high", effortSent: "high", perPath: 1 },
 ];
 
 function buildPlan(): PlanItem[] {
