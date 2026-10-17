@@ -254,8 +254,8 @@ export const OPENCODE_MODELS: ModelDef[] = [
   // Added 2026-10-17: Reflection AI's Beam 501B open-weight MoE model (23B active),
   // added as a limited-time free model on OpenCode Zen (/zen/v1/models: beam-free).
   // Live-probed 2026-10-17: 200 with stream:true and tool sextet.
-  // Context window: 262_144 tokens (256K), maxTokens: 131_072.
-  // Probed boundary: filler up to 250,000 words answers 200.
+  // Context window: 1_048_576 tokens (1M), maxTokens: 131_072.
+  // Probed boundary: filler up to 900,000 words (~1.1M tokens) answers 200.
   // Input: text-only (image probe answers 400 "Beam supports text input only").
   // Wire format: Chat Completions (/v1/responses answers 400 ModelProtocolUnsupported).
   // Reasoning effort ladder: minimal is rejected with 400 (unsupported_value),
@@ -263,7 +263,7 @@ export const OPENCODE_MODELS: ModelDef[] = [
   id: "beam-free",
   name: "Beam Free [OpenCode]",
   reasoning: true,
-  contextWindow: 262_144,
+  contextWindow: 1_048_576,
   maxTokens: 131_072,
   input: ["text"],
   thinkingLevelMap: {

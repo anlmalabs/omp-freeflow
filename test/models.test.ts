@@ -62,6 +62,7 @@ test("1M context window models are properly configured", () => {
 		"z-ai/glm-5.3-flash",
 		"glm-5.3-flash-free",
 		"exo-free",
+		"beam-free",
 		"mimo-v2.6-flash-free",
 		"deepseek-v4.1-flash-free",
 		"space-bunny-free",
@@ -134,7 +135,7 @@ test("2026-09-22 and 2026-09-28 additions route to the correct upstream with ver
 		const beam = getModelDef("beam-free");
 		assert.ok(beam);
 		assert.equal(beam.reasoning, true);
-		assert.equal(beam.contextWindow, 262_144);
+		assert.equal(beam.contextWindow, 1_048_576);
 		assert.equal(beam.maxTokens, 131_072);
 		assert.deepEqual(beam.input, ["text"]);
 		assert.equal(beam.thinkingLevelMap?.minimal, null);
@@ -268,8 +269,8 @@ test("catalog spec lock: live-verified ctx/max/reasoning per model", () => {
 	// the Kilo twin (z-ai/glm-5.3-flash).
 	"glm-5.3-flash-free": { ctx: 1_000_000, max: 32_000, reasoning: true },
 	// Added 2026-10-17: Reflection AI's Beam 501B open-weight MoE model, limited-time
-	// free model on Zen (/zen/v1/models: beam-free); boundary probe up to 250k words.
-	"beam-free": { ctx: 262_144, max: 131_072, reasoning: true },
+	// free model on Zen (/zen/v1/models: beam-free); boundary probe up to 900k words (~1.1M tokens).
+	"beam-free": { ctx: 1_048_576, max: 131_072, reasoning: true },
 	// Added 2026-10-16 (recheck): revived upstream the same day - back on
 	// the official free lineup, chat 200 with tools/stream/reasoning/vision;
 	// dual-canary recall at ~520K tokens and the 1.2M-word empty-400 wall

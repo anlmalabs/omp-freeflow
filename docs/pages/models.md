@@ -54,7 +54,7 @@ pi-freeflow provides unified access to **37 curated free models** across four up
 | `space-bunny-free` | 1,048,576 | 524,288 | low..max | ✅ |
 | `longcat-2.5-preview-free` | 1,000,000 | 131,072 | minimal..max | ✅ |
 | `glm-5.3-flash-free` | 1,000,000 | 32,000 | minimal..max | ✅ |
-| `beam-free` | 262,144 | 131,072 | low..max | ❌ |
+| `beam-free` | 1,048,576 | 131,072 | low..max | ❌ |
 | `exo-free` | 1,048,576 | 131,072 | high | ✅ |
 | `deepseek-v4.1-flash-free` | 1,000,000 | 384,000 | minimal..max | ✅ |
 
