@@ -17,7 +17,7 @@ import { getActiveRelayState, resetAllRelayHealth, setActiveRelayState } from ".
 import { readRecentLogs } from "../src/logger.ts";
 import { _resetFreeTierHintForTest, _resetUpstreamHealthForTest } from "../src/upstream-health.ts";
 
-const RESPONSES_MODEL = "muse-spark-1.3-contributor-free";
+const RESPONSES_MODEL = "muse-spark-1.2-contributor-free";
 const CHAT_MODEL = "mimo-v2.6-flash-free";
 
 const CHAT_SSE = 'data: {"id":"chatcmpl-1","model":"x","choices":[{"index":0,"delta":{"role":"assistant","content":"hi"}}]}\n\ndata: [DONE]\n\n';

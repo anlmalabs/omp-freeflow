@@ -299,12 +299,12 @@ test("403 gate bodies gain a hint; everything else passes through byte-identical
 
 test("gate rejections are remembered by key, then forgotten on recovery", () => {
  withIsolatedHealthFiles(() => {
-  const body = { model: "muse-spark-1.3-contributor-free", input: "hi", prompt_cache_key: "sess-resume-1" };
+  const body = { model: "muse-spark-1.2-contributor-free", input: "hi", prompt_cache_key: "sess-resume-1" };
   assert.equal(wasGateRejected(body, "/v1/responses"), false);
   rememberGateRejection(body, "/v1/responses", 403, GATE_BODY);
   assert.equal(wasGateRejected(body, "/v1/responses"), true);
   assert.equal(
-   wasGateRejected({ model: "muse-spark-1.3-contributor-free", input: "other" }, "/v1/responses"),
+   wasGateRejected({ model: "muse-spark-1.2-contributor-free", input: "other" }, "/v1/responses"),
    false,
    "different sessions are unaffected",
   );

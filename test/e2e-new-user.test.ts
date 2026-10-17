@@ -224,7 +224,7 @@ test("E2E [5/10] ensureDaemon seamlessly rebinds when active daemon process is t
 test("E2E [6/10] model catalog accurately maps thinking formats and source routing", () => {
  // Canonical resolution
  assert.equal(resolveCanonicalModelId("muse-spark-1.2-contributor-free"), "muse-spark-1.2-contributor-free");
- assert.equal(resolveCanonicalModelId("muse-spark-1.3-contributor-free"), "muse-spark-1.3-contributor-free");
+	assert.equal(resolveCanonicalModelId("beam-free"), "beam-free");
 	assert.equal(resolveCanonicalModelId("mimo-v2.6-flash-free"), "mimo-v2.6-flash-free");
 
  // Kilo models identification

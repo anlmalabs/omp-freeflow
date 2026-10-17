@@ -42,7 +42,7 @@ function reasoning(id: string, blob?: string): Record<string, unknown> {
 
 function responsesBody(key: string, input: unknown[], previousResponseId?: string): string {
  const body: Record<string, unknown> = {
-  model: "muse-spark-1.3-contributor-free",
+  model: "muse-spark-1.2-contributor-free",
   store: false,
   stream: false,
   prompt_cache_key: key,

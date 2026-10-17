@@ -247,13 +247,13 @@ returns `403` — the same `403` in all four cases, with nothing in the body to
 say which axis was wrong.
 
 Note that `max_tokens: 16` is fine on the chat-completions wire but rejected
-on `/responses`, where the floor is 16 or higher — `muse-spark-1.3-contributor-free`
-and `muse-spark-1.2-contributor-free` answer `400` below it.
+on `/responses`, where the floor is 16 or higher — `muse-spark-1.2-contributor-free`
+answers `400` below it.
 
 ## Operational notes
 
 - **A live probe costs free-tier quota.** Every request above is a real
-  inference request. A catalog sweep across 14 models is 14 requests.
+  inference request. A catalog sweep across 13 models is 13 requests.
 - **Probe through the local proxy, not against a relay directly.** Direct
   relay probing drives the relay health machine, and a burst of deliberate
   failures will park relays in cooldown for the duration of their backoff.

@@ -1,8 +1,8 @@
 /**
  * Static model definitions and upstream routing catalogs for pi-freeflow
  *
- * Defines the 37 verified free models (live-verified 2026-10-16):
- * - 14 OpenCode Zen models (2 Responses API + 12 Chat Completions)
+ * Defines the 36 verified free models (live-verified 2026-10-17):
+ * - 13 OpenCode Zen models (1 Responses API + 12 Chat Completions)
  * - 13 KiloCode Keyless Gateway models (OpenRouter format)
  * - 2 Cline direct-only models (per-user pool)
  * - 8 OVHcloud AI Endpoints models (keyless, direct-only)
@@ -44,24 +44,6 @@ export const OPENCODE_MODELS: ModelDef[] = [
  {
   id: "muse-spark-1.2-contributor-free",
   name: "Muse Spark 1.2 [OpenCode]",
-  reasoning: true,
-  contextWindow: 1_048_576,
-  maxTokens: 131_072,
-  api: "openai-responses",
- input: ["text", "image", "video"],
-  thinkingLevelMap: {
-   off: null,
-   minimal: "minimal",
-   low: "low",
-   medium: "medium",
-   high: "high",
-   xhigh: "xhigh",
-   max: null,
-  },
- },
- {
-  id: "muse-spark-1.3-contributor-free",
-  name: "Muse Spark 1.3 [OpenCode]",
   reasoning: true,
   contextWindow: 1_048_576,
   maxTokens: 131_072,

@@ -19,8 +19,8 @@ import {
 	_resetUpstreamHealthForTest,
 } from "../src/upstream-health.ts";
 
-const CHAT_MODEL = "muse-spark-1.2-contributor-free";
-const RESPONSES_MODEL = "muse-spark-1.3-contributor-free";
+const CHAT_MODEL = "cat-jam-free";
+const RESPONSES_MODEL = "muse-spark-1.2-contributor-free";
 const KILO_MODEL = "dots-studio/dots-3-note-preview:free";
 
 const FIND_DESC = "Find files by name";

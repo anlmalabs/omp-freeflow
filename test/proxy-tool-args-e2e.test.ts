@@ -13,8 +13,8 @@ import {
 } from "../src/upstream-health.ts";
 import { startProxy } from "../src/proxy.ts";
 
-const CHAT_MODEL = "muse-spark-1.2-contributor-free";
-const RESPONSES_MODEL = "muse-spark-1.3-contributor-free";
+const CHAT_MODEL = "cat-jam-free";
+const RESPONSES_MODEL = "muse-spark-1.2-contributor-free";
 
 /** The malformation reproduced live from the free models (see tool-args-repair). */
 const MALFORMED = '{"op":"init","phases":[{"name":"Research","tasks":["Map repo structure"]},{"name":"Synthesis","tasks":["Write summary"]}]}';

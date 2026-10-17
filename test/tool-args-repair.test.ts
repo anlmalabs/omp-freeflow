@@ -408,7 +408,7 @@ test("value-level repair handles the Anthropic parsed-input shape", () => {
 
 test("aggregate responses path repairs the reported payload end to end", () => {
 	const body: Record<string, unknown> = {
-		model: "muse-spark-1.3-contributor-free",
+		model: "muse-spark-1.2-contributor-free",
 		input: "hi",
 		stream: false,
 		tools: [todoTool()],

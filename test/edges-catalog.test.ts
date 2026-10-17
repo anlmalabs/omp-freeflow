@@ -159,13 +159,13 @@ test("refreshCatalog 200 maps the /inference/v1/models free list onto catalog fl
  });
 });
 
-test("stale cache without etag serves spark-1.3 with repaired responses api (issue #6)", async () => {
+test("stale cache without etag serves spark-1.2 with repaired responses api (issue #6)", async () => {
  await withCacheFileIsolation(async () => {
   // Reporter's exact file shape: 3-day-old cache, no etag, 1.3 entry
   // written before enrichment knew it (api missing), paid ids present.
   const staleSpark = {
-   id: "muse-spark-1.3-contributor-free",
-   name: "Muse Spark 1.3 (1M)",
+   id: "muse-spark-1.2-contributor-free",
+   name: "Muse Spark 1.2 (1M)",
    reasoning: true,
    contextWindow: 1_048_576,
    maxTokens: 131_072,
@@ -182,7 +182,7 @@ test("stale cache without etag serves spark-1.3 with repaired responses api (iss
    source: "opencode" as const,
   };
   const models = [
-   ...baselineModels().filter((m) => m.id !== "muse-spark-1.3-contributor-free"),
+   ...baselineModels().filter((m) => m.id !== "muse-spark-1.2-contributor-free"),
    staleSpark,
    paid,
   ];
@@ -204,9 +204,9 @@ test("stale cache without etag serves spark-1.3 with repaired responses api (iss
   };
   const result = await refreshCatalog(false);
   assert.equal(calls, 1, "etagless stale cache must attempt one plain revalidation fetch");
-  const spark = result.find((m) => m.id === "muse-spark-1.3-contributor-free");
-  assert.ok(spark, "stale 1.3 entry must survive");
-  assert.equal(spark.api, "openai-responses", "stale 1.3 api must be backfilled, not undefined");
+  const spark = result.find((m) => m.id === "muse-spark-1.2-contributor-free");
+  assert.ok(spark, "stale 1.2 entry must survive");
+  assert.equal(spark.api, "openai-responses", "stale 1.2 api must be backfilled, not undefined");
   assert.equal(result.some((m) => m.id === "claude-fable-5-1"), false, "paid ids must be purged");
  });
 });
@@ -297,8 +297,8 @@ test("sanitizeCatalogModels keeps every OVH id and repairs its source", () => {
 
 test("sanitizeCatalogModels repairs stale spark api to openai-responses (issue #6)", () => {
  const staleSpark = {
-  id: "muse-spark-1.3-contributor-free",
-  name: "Muse Spark 1.3 (1M)",
+  id: "muse-spark-1.2-contributor-free",
+  name: "Muse Spark 1.2 (1M)",
   reasoning: true,
   contextWindow: 1_048_576,
   maxTokens: 131_072,

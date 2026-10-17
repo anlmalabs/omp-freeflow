@@ -186,7 +186,7 @@ test("proxy: OpenCode Responses request without tools (like advisor watchdog) re
 		// Advisor sends minimal prompt without tools and stream: false
 		clientReq.write(
 			JSON.stringify({
-				model: "muse-spark-1.3-contributor-free",
+				model: "muse-spark-1.2-contributor-free",
 				input: "watchdog inspection",
 				stream: false,
 			}),
