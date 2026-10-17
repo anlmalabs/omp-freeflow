@@ -53,7 +53,6 @@ import type { RelayState } from "../src/types.ts";
 
 const RESPONSES_MODELS: Record<string, true> = {
  "muse-spark-1.2-contributor-free": true,
- "muse-spark-1.3-contributor-free": true,
 };
 const PORT = 29363;
 const PROMPT = "Write a TypeScript LRU cache with JSDoc, ~80 lines, no preamble.";
@@ -89,8 +88,6 @@ interface BenchRow {
 
 /* Quick pass: 14 cells x {direct, relay} x 1 attempt = 28 rows. */
 const CELLS: Cell[] = [
- { model: "muse-spark-1.3-contributor-free", effortLabel: "xhigh", effortSent: "xhigh", perPath: 1 },
- { model: "muse-spark-1.3-contributor-free", effortLabel: "high", effortSent: "high", perPath: 1 },
  { model: "muse-spark-1.2-contributor-free", effortLabel: "xhigh", effortSent: "xhigh", perPath: 1 },
  { model: "muse-spark-1.2-contributor-free", effortLabel: "high", effortSent: "high", perPath: 1 },
  { model: "big-pickle", effortLabel: "max", effortSent: "max", perPath: 1 },

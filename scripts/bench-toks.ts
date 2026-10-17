@@ -30,7 +30,6 @@ import { getActiveRelayState, setActiveRelayState } from "../src/relay-state.ts"
 
 const RESPONSES_MODELS: Record<string, true> = {
 	"muse-spark-1.2-contributor-free": true,
-	"muse-spark-1.3-contributor-free": true,
 };
 const PORT = 29361;
 const PROMPT = "Write a TypeScript LRU cache with JSDoc, ~80 lines, no preamble.";
@@ -62,13 +61,6 @@ interface BenchRow {
 }
 
 const FULL_PLAN: PlanItem[] = [
-	// muse-spark-1.3: xhigh x3 + high x3, interleaved A-B-A-B
-	{ model: "muse-spark-1.3-contributor-free", effortLabel: "xhigh", effortSent: "xhigh" },
-	{ model: "muse-spark-1.3-contributor-free", effortLabel: "high", effortSent: "high" },
-	{ model: "muse-spark-1.3-contributor-free", effortLabel: "xhigh", effortSent: "xhigh" },
-	{ model: "muse-spark-1.3-contributor-free", effortLabel: "high", effortSent: "high" },
-	{ model: "muse-spark-1.3-contributor-free", effortLabel: "xhigh", effortSent: "xhigh" },
-	{ model: "muse-spark-1.3-contributor-free", effortLabel: "high", effortSent: "high" },
 	// muse-spark-1.2: xhigh x3 + high x3, interleaved
 	{ model: "muse-spark-1.2-contributor-free", effortLabel: "xhigh", effortSent: "xhigh" },
 	{ model: "muse-spark-1.2-contributor-free", effortLabel: "high", effortSent: "high" },
