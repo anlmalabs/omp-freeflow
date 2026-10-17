@@ -131,17 +131,17 @@ test("2026-09-22 and 2026-09-28 additions route to the correct upstream with ver
 		assert.equal(glm.thinkingLevelMap?.max, "max");
 		assert.equal(getModelUpstream("glm-5.3-flash-free"), "opencode");
 		assert.equal(getModelUpstream("glm-5.3-flash"), "opencode");
-		const alpha = getModelDef("ll-alpha-free");
-		assert.ok(alpha);
-		assert.equal(alpha.reasoning, true);
-		assert.equal(alpha.contextWindow, 262_144);
-		assert.equal(alpha.maxTokens, 65_536);
-		assert.deepEqual(alpha.input, ["text"]);
-		assert.equal(alpha.thinkingLevelMap?.minimal, null);
-		assert.equal(alpha.thinkingLevelMap?.low, "low");
-		assert.equal(alpha.thinkingLevelMap?.max, "max");
-		assert.equal(getModelUpstream("ll-alpha-free"), "opencode");
-		assert.equal(getModelUpstream("ll-alpha"), "opencode");
+		const beam = getModelDef("beam-free");
+		assert.ok(beam);
+		assert.equal(beam.reasoning, true);
+		assert.equal(beam.contextWindow, 262_144);
+		assert.equal(beam.maxTokens, 131_072);
+		assert.deepEqual(beam.input, ["text"]);
+		assert.equal(beam.thinkingLevelMap?.minimal, null);
+		assert.equal(beam.thinkingLevelMap?.low, "low");
+		assert.equal(beam.thinkingLevelMap?.max, "max");
+		assert.equal(getModelUpstream("beam-free"), "opencode");
+		assert.equal(getModelUpstream("beam"), "opencode");
 		const exo = getModelDef("exo-free");
 		assert.ok(exo);
 		assert.equal(exo.reasoning, true);
@@ -168,6 +168,7 @@ test("2026-09-28 pruned models stay out of the static catalog", () => {
 		"fledge-alpha-free",
 		"inclusionai/ling-3.0-flash-sante:free",
 		"stepfun/step-3.7-flash:free",
+		"ll-alpha-free",
 	]) {
 		assert.equal(getModelDef(id), undefined, `${id} must not resolve`);
 		assert.equal(MODEL_MAP.get(id), undefined, `${id} must not be in MODEL_MAP`);
@@ -179,6 +180,7 @@ test("2026-09-28 pruned models stay out of the static catalog", () => {
 	assert.equal(resolveCanonicalModelId("fledge-alpha"), "fledge-alpha");
 	assert.equal(resolveCanonicalModelId("step-3.7-flash"), "step-3.7-flash");
 	assert.equal(resolveCanonicalModelId("ling-3.0-flash-sante"), "ling-3.0-flash-sante");
+	assert.equal(resolveCanonicalModelId("ll-alpha"), "ll-alpha");
 });
 
 test("model aliases resolve correctly to canonical IDs", () => {
@@ -265,9 +267,9 @@ test("catalog spec lock: live-verified ctx/max/reasoning per model", () => {
 	// at ~250K words, hard 400 only above ~1M words) — 1,000,000 declared like
 	// the Kilo twin (z-ai/glm-5.3-flash).
 	"glm-5.3-flash-free": { ctx: 1_000_000, max: 32_000, reasoning: true },
-	// Added 2026-10-16 (issue #71): pi.dev + models.dev agree on 262,144/65,536,
-	// text-only; boundary probe matches (recall ~220K words, 400 at ~250K).
-	"ll-alpha-free": { ctx: 262_144, max: 65_536, reasoning: true },
+	// Added 2026-10-17: Reflection AI's Beam 501B open-weight MoE model, limited-time
+	// free model on Zen (/zen/v1/models: beam-free); boundary probe up to 250k words.
+	"beam-free": { ctx: 262_144, max: 131_072, reasoning: true },
 	// Added 2026-10-16 (recheck): revived upstream the same day - back on
 	// the official free lineup, chat 200 with tools/stream/reasoning/vision;
 	// dual-canary recall at ~520K tokens and the 1.2M-word empty-400 wall
@@ -386,7 +388,7 @@ test("new alias map resolves to canonical kilo ids", () => {
 	assert.equal(resolveCanonicalModelId("glyph-cluster"), "stealth/glyph-cluster");
 	assert.equal(resolveCanonicalModelId("mimo-v2.6-flash"), "mimo-v2.6-flash-free");
 	assert.equal(resolveCanonicalModelId("glm-5.3-flash"), "glm-5.3-flash-free");
-	assert.equal(resolveCanonicalModelId("ll-alpha"), "ll-alpha-free");
+	assert.equal(resolveCanonicalModelId("beam"), "beam-free");
 	assert.equal(resolveCanonicalModelId("exo"), "exo-free");
 });
 
@@ -405,6 +407,11 @@ test("step-5-preview-free and its Kilo lane are pruned from the static catalog",
 		assert.equal(MODEL_MAP.get(id), undefined, id + " must not be in MODEL_MAP");
 		assert.equal(ALL_MODELS.some((m) => m.id === id), false, id + " must not be in ALL_MODELS");
 	}
+});
+
+test("ll-alpha-free is pruned from the static catalog", () => {
+	assert.equal(MODEL_MAP.get("ll-alpha-free"), undefined, "ll-alpha-free must not be in MODEL_MAP");
+	assert.equal(ALL_MODELS.some((m) => m.id === "ll-alpha-free"), false, "ll-alpha-free must not be in ALL_MODELS");
 });
 
 test("2026-10-13 OVH lane: every id routes to the ovh upstream, never Zen", () => {

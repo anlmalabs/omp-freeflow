@@ -251,23 +251,20 @@ export const OPENCODE_MODELS: ModelDef[] = [
   },
  },
  {
-  // Added 2026-10-16 (issue #71 drift): Zen v1.19.2 added this free id.
-  // Specs agree across pi.dev and models.dev (262,144 ctx / 65,536 max,
-  // text-only) and the boundary probe matches: a marker at 90% depth is
-  // recalled at ~220K words and the gateway refuses ~250K words (400), with
-  // a silent no-recall at ~240K — the window ends right about there.
-  // maxTokens 65,536 published; the gateway accepted 131,072, which is
-  // acceptance, not a cap. Effort ladder: low/medium/high/xhigh/max probed
-  // 200 with visibly different reasoning lengths; `minimal` answers 200 too
-  // but stays hidden because the published ladder starts at low (same class
-  // as nemotron's tolerated-but-hidden `max`); `off` is null like everywhere.
-  // Chat-only (/v1/responses 400 protocol). Text-only: an image probe
-  // produced no answer.
-  id: "ll-alpha-free",
-  name: "LL Alpha [OpenCode]",
+  // Added 2026-10-17: Reflection AI's Beam 501B open-weight MoE model (23B active),
+  // added as a limited-time free model on OpenCode Zen (/zen/v1/models: beam-free).
+  // Live-probed 2026-10-17: 200 with stream:true and tool sextet.
+  // Context window: 262_144 tokens (256K), maxTokens: 131_072.
+  // Probed boundary: filler up to 250,000 words answers 200.
+  // Input: text-only (image probe answers 400 "Beam supports text input only").
+  // Wire format: Chat Completions (/v1/responses answers 400 ModelProtocolUnsupported).
+  // Reasoning effort ladder: minimal is rejected with 400 (unsupported_value),
+  // low/medium/high/xhigh/max all answer 200 with reasoning.
+  id: "beam-free",
+  name: "Beam Free [OpenCode]",
   reasoning: true,
   contextWindow: 262_144,
-  maxTokens: 65_536,
+  maxTokens: 131_072,
   input: ["text"],
   thinkingLevelMap: {
    off: null,
@@ -722,7 +719,7 @@ export const MODEL_ALIASES: Record<string, string> = {
  "space-bunny": "space-bunny-free",
  "longcat-2.5-preview": "longcat-2.5-preview-free",
  "longcat": "longcat-2.5-preview-free",
- "ll-alpha": "ll-alpha-free",
+ "beam": "beam-free",
  "deepseek-v4.1-flash": "deepseek-v4.1-flash-free",
  // provider-prefixed short aliases (slash-normalized)
  "laguna-s-2.1:free": "poolside/laguna-s-2.1:free",

@@ -124,6 +124,9 @@ export const DEAD_MODEL_IDS = new Set<string>([
  // answers 401 PAID_MODEL_AUTH_REQUIRED while the sibling z-ai/glm-5.3-flash
  // answers 200 keyless with the same request shape.
  "stepfun/step-5-preview-free",
+ // ll-alpha-free: decommissioned upstream (2026-10-17) — gone from live
+ // Zen /v1/models list, answers HTTP 410 "Model ll-alpha-free has been deprecated".
+ "ll-alpha-free",
 ]);
 /**
  * Free-tier allowlist for anything entering the picker via network or stale disk.
