@@ -31,10 +31,11 @@ export const FALLBACK_KILO_MODEL = "nvidia/nemotron-3.5-lightning:free";
 
 export type ZenRoute = "passthrough" | "failover" | "canary";
 
-/** Free-tier gate marker: the free tier only works from inside OpenCode. */
+/** Free-tier gate marker: the free tier only works from inside OpenCode or is blocked by network/VPN abuse detection. */
 const GATE_CODE_MARKER = "FreeTierError";
 const GATE_MESSAGE_MARKER = "only be used from within OpenCode";
-
+const GATE_ABUSIVE_MARKER = "abusive traffic";
+const GATE_NETWORK_MARKER = "aren't available from your current network";
 /** User-visible hint attached to fast-failed 403 gate bodies. */
 const FREE_TIER_HINT =
  "OpenCode's free tier is only available inside OpenCode right now, " +
@@ -266,12 +267,14 @@ export function notifyGateTransition(upstream: UpstreamName, gated?: boolean): v
 
 /** True when a status/body pair is the free-tier gate (fresh sessions refused). */
 export function isFreeTierGate(status: number, bodyText: unknown): boolean {
- if (status !== 403 || typeof bodyText !== "string") return false;
- return (
-  bodyText.includes(GATE_CODE_MARKER) && bodyText.includes(GATE_MESSAGE_MARKER)
- );
+	if (status !== 403 || typeof bodyText !== "string") return false;
+	if (!bodyText.includes(GATE_CODE_MARKER)) return false;
+	return (
+		bodyText.includes(GATE_MESSAGE_MARKER) ||
+		bodyText.includes(GATE_ABUSIVE_MARKER) ||
+		bodyText.includes(GATE_NETWORK_MARKER)
+	);
 }
-
 /** Stable conversation key carried by request bodies, if the caller sent one. */
 export function sessionKeyOf(parsedBody: unknown): string | null {
  if (typeof parsedBody !== "object" || parsedBody === null) return null;
