@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.38.5
+
+### Patch Changes
+
+- Salvage relay rate-limit responses when direct fallback encounters network-level or abusive-IP 403 errors, preventing transient rate limits from locking up upstream models. Add the `/freeflow sticky` command to pin requests to one healthy relay until a rate limit or edge error occurs, preserving fresh pool relays. Recognize network-restricted and abusive-traffic 403 variants as free-tier gates so fresh sessions automatically fail over to healthy fallback models without interruption.
+
 ## 1.38.4
 
 ### Patch Changes
