@@ -27,6 +27,7 @@ Requires Node >= 22.19.0, ESM (`"type": "module"`).
 - Proxy preserves caller tools verbatim; translation only reshapes wire format (`src/tool-translation.ts`)
 - Reuse existing patterns; one convention per concern — a second parallel implementation is a bug
 - Before changing an exported symbol, find all callsites first
+- Never implement auto fallback models: a request for a model must either be fulfilled by that exact model or surface the authentic upstream error/status; never silently swap or substitute another model (e.g. Zen -> Kilo fallback)
 
 ## Testing rules
 
