@@ -40,6 +40,16 @@ Requires Node >= 22.19.0, ESM (`"type": "module"`).
 - Changesets workflow (`.changeset/`): `major` = breaking, `minor` = new compatible capability, `patch` = fix. Changelog headings follow suit (`### Minor Changes`).
 - `npm publish` is always run by the maintainer in their own terminal (2FA). Agents never publish, never push/tag before the maintainer confirms the publish landed.
 
+## Repo metadata (About panel)
+
+The GitHub About description mirrors README's tagline — same facts, same numbers. Any README change to the headline (model count, tagline, relay story) MUST update the About in the same change:
+
+```
+gh repo edit --description "<new description>"
+```
+
+Topics in the About panel follow the README feature list: add one when a headline feature lands, drop one when it is removed. The About must never advertise an older model count than README and `src/models.ts`.
+
 ## Public-repo hygiene (this repo is public)
 
 - No secrets, tokens, private hosts, LAN IPs, emails, or internal topology in tracked files or history
