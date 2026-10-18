@@ -75,27 +75,50 @@ supported). The host resolves the rest.
 ### Add relays
 
 The default setup talks to upstream directly. Add relays when shared IPs start
-hitting rate limits. The fastest path is guided deploy: run
-`/freeflow deploy cloudflare` (or `deno`, `vercel`), paste your platform token
-once when asked, and the relay is created and added to your pool. The token
-stays in memory and is never written to disk.
+hitting rate limits — the OpenCode Zen free tier counts them per egress IP, so
+how many dedicated egress addresses you control decides how much you can run at
+once.
 
-Manual fallback per platform:
+**Option A: Self-hosted WARP relay pool (recommended for OpenCode Zen)**
 
-**Option A: Cloudflare Workers, auto deploy (recommended)**
+One Linux VPS runs a pool of isolated Cloudflare WARP egress addresses with
+automatic rotation of rate-limited IPs — [trefeon/warp-relay-pool](https://github.com/trefeon/warp-relay-pool):
+
+```bash
+git clone https://github.com/trefeon/warp-relay-pool.git
+cd warp-relay-pool && ./setup.sh
+```
+
+- **Many egress IPs, tiny footprint**: each relay node is ~1.8 MiB of RAM; the
+  default five-relay pool fits a 512 MB VPS (~50 MB of stack over a private
+  mesh-VPN URL, ~160 MB with public tunnel URLs).
+- **Auto-rotation**: a background service probes each egress for HTTP 429 and
+  rotates only the throttled node — the rest of the pool keeps serving and your
+  client URLs stay put.
+- **No platform quotas, no request rewriting**: your host's bandwidth, and
+  requests arrive upstream with the client's own fingerprint.
+- **Same contract as edge relays**: implements `x-relay-target`, so it can sit
+  in a pool alongside worker deployments.
+- The setup wizard prints ready-to-paste `/freeflow add <url> <label>` commands;
+  pair the pool with `/freeflow spread` so parallel sessions and subagents land
+  on different egress IPs.
+
+**Option B: Cloudflare Workers, auto deploy (zero-infra)**
 ```bash
 /freeflow deploy cloudflare  # prompts token in-memory, auto-adds to pool
 # or /freeflow deploy with no argument to pick the platform interactively
 ```
 Manual fallback: `dash.cloudflare.com` → Workers → Create → Deploy → Edit code → paste the canonical worker source (see below) → Deploy → `/freeflow add https://your.workers.dev cf-worker-1`
 
-**Option B: Deno Deploy, auto deploy**
+**Option C: Deno Deploy, auto deploy (Kilo models only)**
 ```bash
 /freeflow deploy deno  # prompts token in-memory, auto-adds to pool
 ```
 Manual fallback: `dash.deno.com` → New Project → Playground → paste the canonical worker source (see below) → Deploy → `/freeflow add https://your-project.deno.dev deno-relay-1`
 
-**Option C: Vercel Edge Relay (last resort, paid plan only)**
+Deno Deploy rewrites the outbound `User-Agent` at the platform layer, so OpenCode Zen free-tier traffic through a Deno relay is refused with `403 FreeTierError`; Kilo models still work. The deploy flow warns up front and its post-deploy inference probe reports what the relay can actually serve.
+
+**Option D: Vercel Edge Relay (last resort, paid plan only)**
 ```bash
 /freeflow deploy vercel  # prompts token in-memory, auto-adds to pool
 ```
@@ -106,18 +129,6 @@ For `api/relay.js`, use the canonical worker source (see below); `vercel.json` s
 
 ```json
 { "rewrites": [{ "source": "/(.*)", "destination": "/api/relay" }] }
-```
-
-**Option D: Self-Hosted WARP Relay on VPS (1GB VPS friendly)**
-
-If you have a Linux VPS (even a low-spec 1GB RAM instance), you can self-host a dedicated egress relay pool using [trefeon/warp-relay-pool](https://github.com/trefeon/warp-relay-pool):
-- **1GB VPS friendly**: Lightweight footprint designed to run comfortably on low-resource VPS nodes.
-- **Rotating Cloudflare WARP egress**: Automatically rotates outbound IPs so upstream rate limits don't block your sessions.
-- **Full protocol compatibility**: Implements the `x-relay-target` contract used by pi-freeflow.
-
-Once deployed on your VPS, register it in your relay pool:
-```bash
-/freeflow add https://your-vps:port vps-warp-relay
 ```
 
 **Canonical worker source (all platforms)**
