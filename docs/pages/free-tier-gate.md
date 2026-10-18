@@ -191,18 +191,26 @@ this lane requires a tool declaration, not because it is checking one.
 
 ## Handling a refusal
 
-pi-freeflow treats a `403 FreeTierError` as a terminal upstream verdict, not a
-relay fault — the rule is stated in `src/proxy.ts` and the state machine lives
-in `src/upstream-health.ts`.
+A `403 FreeTierError` that comes back on the **direct** route is a terminal
+upstream verdict, not a relay fault — the rule is stated in `src/proxy.ts` and
+the state machine lives in `src/upstream-health.ts`.
 
-That policy is **correct**, and it is worth keeping explicit, because the
-opposite looks reasonable: on a refusal, roll to a different relay. Measured:
-all 10 relays in a healthy pool returned an **identical** `403` for a model the
-running daemon served `200` at the same moment. Rolling buys nothing and
-burns quota on retries.
+That policy is **correct** for the direct route, and it is worth keeping
+explicit, because the opposite looks reasonable: on a refusal, roll to a
+different relay. Measured: all 10 relays in a healthy pool returned an
+**identical** `403` for a model the running daemon served `200` at the same
+moment. Rolling buys nothing and burns quota on retries.
 
-What the daemon does instead is correct in the same situation: it records the
-refusal, fails fresh sessions over to a healthy KiloCode model on the same
+A refusal that arrives **through a relay** is attributed differently
+(2026-10-18): an egress that rewrites the request fingerprint — Deno Deploy
+replaces the outbound `User-Agent` at the platform layer — refuses everything
+that rides it, so the relay is marked failed and the request rolls once to the
+next candidate or the direct route. A refusal from the direct route (or from
+every candidate after the same request shape) is the gate itself and stays
+terminal; the four axes above are then the thing to check.
+
+On the direct route, what the daemon does instead is the right call: it records
+the refusal, fails fresh sessions over to a healthy KiloCode model on the same
 wire API, and remembers the rejection so a retried or resumed conversation
 fails over immediately rather than replaying a refusal that cannot succeed.
 
