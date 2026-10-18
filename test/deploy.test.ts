@@ -235,6 +235,67 @@ test("deployDenoRelay creates app, pushes script, polls revision, resolves route
 	for (const m of progress) assert.equal(m.includes(TOKEN), false);
 });
 
+test("deployDenoRelay resolves the production hostname from the live v2 timelines shape", async (t) => {
+	instantTimers(t);
+	// Shape of a live GET /v2/revisions/<id> after success: the v2 API labels
+	// timelines with name/context and routes hostnames to them (Preview is
+	// listed first, so ordering alone must not decide the public URL).
+	stubFetch(t, (url, init) => {
+		if (url.endsWith("/v2/revisions/rev-1")) {
+			return {
+				body: {
+					id: "rev-1",
+					status: "succeeded",
+					build_finished_at: "2026-10-18T00:00:00.000Z",
+					timelines: [
+						{ name: "Preview", context: "Preview", hostnames: ["relay-prod-rev-1.my-org.deno.net"] },
+						{ name: "Production", context: "Production", hostnames: ["relay-prod.my-org.deno.net"] },
+					],
+				},
+			};
+		}
+		if (url.endsWith("/v2/apps/app-1/deploy") && init?.method === "POST") {
+			return { body: { id: "rev-1", status: "queued" } };
+		}
+		if (url.endsWith("/v2/apps") && init?.method === "POST") {
+			return { body: { id: "app-1", slug: "app-slug" } };
+		}
+		return { status: 500, body: { error: { message: `unexpected ${init?.method} ${url}` } } };
+	});
+
+	const deployed = await deployDenoRelay("ddo-tok", "app-slug");
+
+	assert.equal(
+		deployed.url,
+		"https://relay-prod.my-org.deno.net",
+		"the Production timeline hostname must win even when Preview is listed first",
+	);
+	assert.match(deployed.auth, /^[0-9a-f]{64}$/, "deno relay mints a private 256-bit secret by default");
+});
+
+test("deployDenoRelay reads hostnames across live and legacy timeline shapes", async (t) => {
+	instantTimers(t);
+	let revision: Record<string, unknown> = {};
+	stubFetch(t, (url, init) => {
+		if (url.endsWith("/v2/revisions/rev-1")) return { body: revision };
+		if (url.endsWith("/v2/apps/app-1/deploy") && init?.method === "POST") return { body: { id: "rev-1", status: "queued" } };
+		if (url.endsWith("/v2/apps") && init?.method === "POST") return { body: { id: "app-1" } };
+		return { status: 500, body: { error: { message: `unexpected ${init?.method} ${url}` } } };
+	});
+
+	// First non-empty hostname wins; blank entries are skipped.
+	revision = { status: "succeeded", timelines: [{ name: "Production", context: "Production", hostnames: ["", "relay-mid.my-org.deno.net"] }] };
+	assert.equal((await deployDenoRelay("ddo-tok", "my-app")).url, "https://relay-mid.my-org.deno.net");
+
+	// A production timeline without hostnames still resolves through legacy domains.
+	revision = { status: "succeeded", timelines: [{ context: "Production", domains: [{ domain: "legacy-prod.my-org.deno.net" }] }] };
+	assert.equal((await deployDenoRelay("ddo-tok", "my-app")).url, "https://legacy-prod.my-org.deno.net");
+
+	// No production marker at all: the first timeline is used.
+	revision = { status: "succeeded", timelines: [{ name: "Preview", context: "Preview", hostnames: ["only.my-org.deno.net"] }] };
+	assert.equal((await deployDenoRelay("ddo-tok", "my-app")).url, "https://only.my-org.deno.net");
+});
+
 test("deployDenoRelay falls back to managed *.deno.net domain when timelines are bare", async (t) => {
 	instantTimers(t);
 	stubFetch(t, (url, init) => {
