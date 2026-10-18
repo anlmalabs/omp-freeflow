@@ -18,7 +18,7 @@ features:
   - title: "36 Curated Free Models"
     details: 13 OpenCode Zen + 13 KiloCode Gateway + 2 Cline + 8 OVHcloud AI Endpoints — up to 1M context, 512K output, vision support, no API keys.
   - title: "BYO Relay Pool"
-    details: Round-robin across your Cloudflare Workers, Vercel Edge, and Deno Deploy for zero upstream rate limits.
+    details: Round-robin across your own relays — a self-hosted pool that runs many egress IPs on one small host, or Cloudflare Workers / Vercel Edge / Deno Deploy workers.
   - title: "Adaptive Failover"
     details: Auto-rolls on 429/5xx, cooldown for unhealthy relays, transparent direct fallback when pool exhausted.
   - title: "Master/Worker Proxy"
