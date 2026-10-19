@@ -174,12 +174,7 @@ function systemCaBundle(): string[] {
   seen.add(b);
   return true;
  });
- return systemCaCache;
-}
-
-/** Test-only: drop the cached bundle so tests re-read the platform store. */
-function _resetSystemCaCacheForTest(): void {
- systemCaCache = null;
+  return systemCaCache;
 }
 
 function toNodeHeaders(headers: HeadersInit | undefined): Record<string, string> {

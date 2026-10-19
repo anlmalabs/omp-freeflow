@@ -1148,17 +1148,8 @@ export function getClientPort(): number {
  return attachedPort || PORT;
 }
 
-function getClientId(): string {
- return CLIENT_ID;
-}
-
 export function hasFallbackServer(): boolean {
  return fallbackServer !== null;
-}
-
-/** Test seam: true when client heartbeat timer is active. */
-function isHeartbeatActive(): boolean {
- return heartbeatTimer !== null;
 }
 
 export function _resetClientForTest(): void {
