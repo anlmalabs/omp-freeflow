@@ -38,26 +38,29 @@ import {
 } from "./config.ts";
 
 import {
-	convertSseToJson,
-	enforceOpencodeFingerprint,
-	looksLikeSse,
-	repairJsonToolArguments,
-	sseToChatCompletionJson,
-	type CaseRestoreMap,
-	type FindGlobRestore,
+ convertSseToJson,
+ enforceOpencodeFingerprint,
+ looksLikeSse,
+ repairJsonToolArguments,
+ sseToChatCompletionJson,
+ type CaseRestoreMap,
+ type FindGlobRestore,
 } from "./opencode-fingerprint.ts";
 import { isDebugEnabled, log } from "./logger.ts";
-import { getModelUpstream, isClineModel, isOvhModel, KILO_MODEL_IDS, MODEL_MAP, ovhUpstreamModelId, resolveCanonicalModelId } from "./models.ts";
+import { getModelUpstream, isClineModel, isOvhModel, isKiroModel, KILO_MODEL_IDS, MODEL_MAP, ovhUpstreamModelId, resolveCanonicalModelId } from "./models.ts";
 import { ClineAuthError, refreshClineToken, toApiKey } from "./cline-device-auth.ts";
+import { buildKiroPayload } from "./kiro-request.ts";
+import { kiroEventStreamToSSE } from "./kiro-transform.ts";
 import { rollChat } from "./cline-accounts.ts";
 import { fetchWithSystemCA } from "./system-ca-fetch.ts";
+import { KIRO_STREAM_URLS, KIRO_TOKEN_ENV } from "./config.ts";
 import {
-	buildFindGlobRestore,
-	chatBodyFromResponsesBody,
-	chatResponsesJsonFromChatCompletion,
-	chatResponsesSseFromChatCompletion,
-	restoreToolNameForCaller,
-	translateToolsForPath,
+ buildFindGlobRestore,
+ chatBodyFromResponsesBody,
+ chatResponsesJsonFromChatCompletion,
+ chatResponsesSseFromChatCompletion,
+ restoreToolNameForCaller,
+ translateToolsForPath,
 } from "./tool-translation.ts";
 import { buildArgRepairSchemas } from "./tool-args.ts";
 // normalize removed — host pi-ai already normalizes thinking/reasoning before proxy
@@ -384,7 +387,7 @@ async function handleClineRequest(opts: {
   return;
  }
  if (!responsesRequest) {
- const data = convertSseToJson(sseText, pathname, true, undefined, findGlob, undefined, argSchemas);
+  const data = convertSseToJson(sseText, pathname, true, undefined, findGlob, undefined, argSchemas);
   if (!res.headersSent) {
    res.writeHead(upstreamRes.status, { "content-type": "application/json" });
    res.end(data);
@@ -556,7 +559,7 @@ async function handleOvhRequest(opts: {
   return;
  }
  if (!responsesRequest) {
- const data = convertSseToJson(sseText, pathname, true, undefined, findGlob, undefined, argSchemas);
+  const data = convertSseToJson(sseText, pathname, true, undefined, findGlob, undefined, argSchemas);
   if (!res.headersSent) {
    res.writeHead(upstreamRes.status, { "content-type": "application/json" });
    res.end(data);
@@ -567,6 +570,203 @@ async function handleOvhRequest(opts: {
  }
  const chat = sseToChatCompletionJson(sseText, true, undefined, findGlob, undefined, argSchemas);
  const resp = chatResponsesJsonFromChatCompletion(chat, requestedModel);
+ if (clientRequestedStream) {
+  if (!res.headersSent) {
+   res.writeHead(200, {
+    "content-type": "text/event-stream",
+    "cache-control": "no-cache, no-transform",
+    connection: "keep-alive",
+    "x-accel-buffering": "no",
+   });
+   res.end(chatResponsesSseFromChatCompletion(resp));
+  } else if (!res.writableEnded) {
+   res.end();
+  }
+  return;
+ }
+ if (!res.headersSent) {
+  res.writeHead(200, { "content-type": "application/json" });
+  res.end(JSON.stringify(resp));
+ } else if (!res.writableEnded) {
+  res.end();
+ }
+}
+
+/**
+ * Serve a Kiro-model request direct (never relay pool, no opencode
+ * fingerprint). Kiro is a chat-completions-shaped upstream that answers in
+ * binary AWS EventStream: a responses-path body translates to chat and the
+ * chat answer translates back, exactly like the Cline and OVH lanes, and the
+ * EventStream body is decoded to OpenAI SSE before it reaches the caller.
+ *
+ * Credentials: there is no credential pool and no login flow in this repo —
+ * Kiro has no device-code auth here. A single out-of-band bearer token arrives
+ * via KIRO_TOKEN_ENV only. Without it the lane answers 501 rather than
+ * attempting any token fetch, so a caller never gets an anonymous 403 that
+ * hides the real cause.
+ */
+async function handleKiroRequest(opts: {
+ parsedBody: Record<string, unknown>;
+ pathname: string;
+ req: http.IncomingMessage;
+ res: http.ServerResponse;
+ reqId: string;
+ clientRequestedStream: boolean;
+}): Promise<void> {
+ const { parsedBody, pathname, req, res, reqId, clientRequestedStream } = opts;
+ const responsesRequest = pathname.endsWith("/responses");
+ const model = typeof parsedBody.model === "string" ? parsedBody.model : "unknown";
+ const token = process.env[KIRO_TOKEN_ENV];
+ if (typeof token !== "string" || token.length === 0) {
+  // No out-of-band credential: say so instead of firing an anonymous request
+  // that would only come back as an opaque upstream 403.
+  log("warn", "kiro lane requested but no token is configured", { model, env: KIRO_TOKEN_ENV }, reqId);
+  if (!res.headersSent) {
+   res.writeHead(501, { "content-type": "application/json" });
+   res.end(JSON.stringify({ error: { message: `Kiro requires a bearer token in ${KIRO_TOKEN_ENV}`, type: "not_implemented" } }));
+  } else if (!res.writableEnded) {
+   res.end();
+  }
+  return;
+ }
+ let chatBody: Record<string, unknown>;
+ if (responsesRequest) {
+  chatBody = chatBodyFromResponsesBody(parsedBody);
+ } else {
+  chatBody = { ...parsedBody };
+  if (Array.isArray(chatBody.tools)) chatBody.tools = translateToolsForPath(chatBody.tools, "/v1/chat/completions");
+  delete chatBody.prompt_cache_key;
+ }
+ // Kiro knows the bare model id, and tool specs travel inside the payload —
+ // `buildKiroPayload` maps body.tools itself, so pass the chat body through
+ // untouched rather than a tools-stripped copy.
+ const kiroBody = buildKiroPayload(model, chatBody, {});
+ // Kiro replies to `stream: true` with EventStream frames. Always ask for it:
+ // a non-streaming call is aggregated here, so the caller's own `stream: false`
+ // never reaches upstream.
+ kiroBody.stream = true;
+ // Capture the caller's own schemas before translation: Kiro's tool-use
+ // arguments malform the same way every other direct lane's do.
+ const argSchemas = buildArgRepairSchemas(Array.isArray(parsedBody.tools) ? parsedBody.tools : []);
+ // No find->glob renaming happens on this lane: Kiro forwards tool names
+ // verbatim (see normalizeToolSpecs in kiro-request.ts), so there is no
+ // rename map to restore and passing one would corrupt caller tool names.
+ // Header-wait timeout + client-disconnect abort. Both cover the fetch only:
+ // a hung Kiro endpoint must not hold the request open forever, and once the
+ // response headers arrive the listeners are detached — the EventStream
+ // decode that follows runs to its own end, guarded by neither.
+ const kiroController = new AbortController();
+ const kiroTimeoutId = setTimeout(
+  () => kiroController.abort(upstreamTimeoutError()),
+  UPSTREAM_HEADER_TIMEOUT_MS,
+ );
+ const abortKiroOnClientGone = () => {
+  if (!res.writableEnded) kiroController.abort();
+ };
+ res.once("close", abortKiroOnClientGone);
+ req.once("error", abortKiroOnClientGone);
+ let upstreamRes: Response;
+ try {
+  upstreamRes = await fetchWithSystemCA(KIRO_STREAM_URLS[0], {
+   method: "POST",
+   headers: {
+    "Content-Type": "application/json",
+    Accept: "application/vnd.amazon.eventstream",
+    "User-Agent": "AWS-SDK-JS/3.0.0 kiro-ide/1.0.0",
+    "x-amz-sso-bearer": token,
+    "x-amzn-kiro-agent-mode": "spec",
+   },
+   body: JSON.stringify(kiroBody),
+   signal: kiroController.signal,
+  });
+ } catch (e) {
+  log("error", "kiro upstream fetch failed", { error: String(e), model }, reqId);
+  if (!res.headersSent) {
+   res.writeHead(502, { "content-type": "application/json" });
+   res.end(JSON.stringify({ error: "upstream error" }));
+  } else if (!res.writableEnded) {
+   res.end();
+  }
+  return;
+ } finally {
+  clearTimeout(kiroTimeoutId);
+  res.off("close", abortKiroOnClientGone);
+  req.off("error", abortKiroOnClientGone);
+ }
+ if (res.writableEnded) {
+  try { await upstreamRes.body?.cancel(); } catch { }
+  return;
+ }
+ if (!upstreamRes.ok) {
+  log("warn", `kiro upstream ${upstreamRes.status} for model ${model}`, { status: upstreamRes.status, model }, reqId);
+  const raw = await upstreamRes.text().catch(() => null);
+  if (raw === null) {
+   log("error", "kiro upstream body unreadable", { status: upstreamRes.status, model }, reqId);
+   if (!res.headersSent) {
+    res.writeHead(502, { "content-type": "application/json" });
+    res.end(JSON.stringify({ error: "upstream error" }));
+   } else if (!res.writableEnded) {
+    res.end();
+   }
+   return;
+  }
+  if (!res.headersSent) {
+   res.writeHead(upstreamRes.status, { "content-type": upstreamRes.headers.get("content-type") || "application/json" });
+   res.end(raw);
+  } else if (!res.writableEnded) {
+   res.end();
+  }
+  return;
+ }
+ // Decode the EventStream into OpenAI SSE. The transformed Response is what
+ // the client consumes, so its content-type — not the upstream EventStream
+ // one — decides how the body is piped.
+ const sseResponse = kiroEventStreamToSSE(upstreamRes, model);
+ if (!responsesRequest && clientRequestedStream && sseResponse.body) {
+  res.writeHead(sseResponse.status, {
+   "content-type": sseResponse.headers.get("content-type") || "text/event-stream",
+   "cache-control": "no-cache, no-transform",
+   connection: "keep-alive",
+   "x-accel-buffering": "no",
+  });
+  pipeUpstreamStream(
+   Readable.fromWeb(sseResponse.body as unknown as WebReadableStream),
+   res,
+   req,
+   reqId,
+   "direct",
+   argSchemas.size > 0
+    ? { callerHadTools: true, argSchemas, pathname: "/v1/chat/completions" }
+    : undefined,
+   // SSE by construction: passing the transformed content-type keeps
+   // stream-pipe on the event-stream path instead of its raw byte path.
+   { upstreamContentType: sseResponse.headers.get("content-type") },
+  );
+  return;
+ }
+ const sseText = await sseResponse.text().catch(() => null);
+ if (sseText === null) {
+  log("error", "kiro upstream stream unreadable", { status: upstreamRes.status, model }, reqId);
+  if (!res.headersSent) {
+   res.writeHead(502, { "content-type": "application/json" });
+   res.end(JSON.stringify({ error: "upstream error" }));
+  } else if (!res.writableEnded) {
+   res.end();
+  }
+  return;
+ }
+ if (!responsesRequest) {
+  const data = convertSseToJson(sseText, pathname, true, undefined, undefined, undefined, argSchemas);
+  if (!res.headersSent) {
+   res.writeHead(200, { "content-type": "application/json" });
+   res.end(data);
+  } else if (!res.writableEnded) {
+   res.end();
+  }
+  return;
+ }
+ const chat = sseToChatCompletionJson(sseText, true, undefined, undefined, undefined, argSchemas);
+ const resp = chatResponsesJsonFromChatCompletion(chat, model);
  if (clientRequestedStream) {
   if (!res.headersSent) {
    res.writeHead(200, {
@@ -719,15 +919,15 @@ async function handleKiloRequest(opts: {
  * when the model is a non-empty string present in MODEL_MAP or KILO_MODEL_IDS
  * (Kilo traffic leaves via its own branch regardless), and when the model is
  * missing/empty (e.g. GET /v1/models carries no body — preserve routing).
- * Cline and OVH models are direct-only and never relay-eligible. Anything else
- * (unknown/paid model ids, non-strings) goes direct upstream.
+ * Cline, OVH, and Kiro models are direct-only and never relay-eligible.
+ * Anything else — unknown/paid model ids, non-strings — goes direct upstream.
  */
 export function isRelayEligibleModel(model: unknown): boolean {
  if (model === undefined || model === null) return true;
  if (typeof model !== "string") return false;
  if (model.trim() === "") return true;
  const canonical = resolveCanonicalModelId(model.trim());
- if (isClineModel(canonical) || isOvhModel(canonical)) return false;
+ if (isClineModel(canonical) || isOvhModel(canonical) || isKiroModel(canonical)) return false;
  return MODEL_MAP.has(canonical) || KILO_MODEL_IDS.has(canonical) || isFreeCatalogId(canonical);
 }
 
@@ -1061,43 +1261,43 @@ export async function killPortHolder(port: number): Promise<boolean> {
   return false;
  }
  const auth = tokenAuthHeaders();
-	try {
-		try {
-			await fetch(`http://${HOST}:${port}/_shutdown`, {
-				method: "POST",
-				headers: auth,
-				signal: AbortSignal.timeout(300),
-			});
-			for (let i = 0; i < 6; i++) {
-				await new Promise<void>((r) => setTimeout(r, 50));
-				if (!(await isProxyAlive(port))) return true;
-			}
-		} catch { }
-		if (process.platform === "win32") {
-			try {
-				const out = execSync(`netstat -ano | findstr :${port}`, {
-					encoding: "utf8",
-					timeout: 3000,
-					windowsHide: true,
-				}) as string;
-				let killed = false;
-				for (const line of out.split("\n")) {
-					if (!line.includes("LISTENING")) continue;
-					const parts = line.trim().split(/\s+/);
-					if (!parts[1] || !parts[1].endsWith(`:${port}`)) continue;
-					const pid = parts[parts.length - 1];
-					if (!pid || !/^\d+$/.test(pid)) continue;
-					if (Number(pid) === process.pid) continue; // never self-kill
-					try {
-						execSync(`taskkill /F /T /PID ${pid}`, { timeout: 3000, stdio: "ignore", windowsHide: true });
-						killed = true;
-					} catch { }
-				}
-				if (killed) return true;
-			} catch { }
-			return false;
-		}
-		try {
+ try {
+  try {
+   await fetch(`http://${HOST}:${port}/_shutdown`, {
+    method: "POST",
+    headers: auth,
+    signal: AbortSignal.timeout(300),
+   });
+   for (let i = 0; i < 6; i++) {
+    await new Promise<void>((r) => setTimeout(r, 50));
+    if (!(await isProxyAlive(port))) return true;
+   }
+  } catch { }
+  if (process.platform === "win32") {
+   try {
+    const out = execSync(`netstat -ano | findstr :${port}`, {
+     encoding: "utf8",
+     timeout: 3000,
+     windowsHide: true,
+    }) as string;
+    let killed = false;
+    for (const line of out.split("\n")) {
+     if (!line.includes("LISTENING")) continue;
+     const parts = line.trim().split(/\s+/);
+     if (!parts[1] || !parts[1].endsWith(`:${port}`)) continue;
+     const pid = parts[parts.length - 1];
+     if (!pid || !/^\d+$/.test(pid)) continue;
+     if (Number(pid) === process.pid) continue; // never self-kill
+     try {
+      execSync(`taskkill /F /T /PID ${pid}`, { timeout: 3000, stdio: "ignore", windowsHide: true });
+      killed = true;
+     } catch { }
+    }
+    if (killed) return true;
+   } catch { }
+   return false;
+  }
+  try {
    const out = execSync(`lsof -ti tcp:${port} 2>/dev/null || fuser -n tcp ${port} 2>/dev/null`, {
     encoding: "utf8",
     timeout: 3000,
@@ -1409,7 +1609,7 @@ export function startProxy(
      id: m.id,
      object: "model",
      created: 0,
-     owned_by: m.source === "kilo" ? "kilocode" : m.source === "cline" ? "clinecode" : m.source === "ovh" ? "ovhcloud" : "opencode",
+     owned_by: m.source === "kilo" ? "kilocode" : m.source === "cline" ? "clinecode" : m.source === "ovh" ? "ovhcloud" : m.source === "kiro" ? "kiro" : "opencode",
     })),
    });
    res.writeHead(200, {
@@ -1482,6 +1682,7 @@ export function startProxy(
    let isKilo = false;
    let isCline = false;
    let isOvh = false;
+   let isKiro = false;
    let parsedBody: Record<string, unknown> | null = null;
    let clientRequestedStream = false;
 
@@ -1491,10 +1692,12 @@ export function startProxy(
      const canonical = resolveCanonicalModelId(parsedBody.model);
      if (isClineModel(canonical)) {
       isCline = true;
-    } else if (isOvhModel(canonical)) {
-     isOvh = true;
-    } else if (KILO_MODEL_IDS.has(canonical)) {
-     isKilo = true;
+     } else if (isOvhModel(canonical)) {
+      isOvh = true;
+     } else if (isKiroModel(canonical)) {
+      isKiro = true;
+     } else if (KILO_MODEL_IDS.has(canonical)) {
+      isKilo = true;
      }
     }
     if (parsedBody && typeof parsedBody === "object") {
@@ -1530,9 +1733,9 @@ export function startProxy(
    let callerHadTools = true;
    let callerCaseRestore: CaseRestoreMap | undefined;
    let callerFindGlob: FindGlobRestore | undefined;
-  let callerInjected: string[] | undefined;
-  let callerArgSchemas: Map<string, Record<string, unknown>> | undefined;
-   if (!isKilo && !isCline && !isOvh && parsedBody) {
+   let callerInjected: string[] | undefined;
+   let callerArgSchemas: Map<string, Record<string, unknown>> | undefined;
+   if (!isKilo && !isCline && !isOvh && !isKiro && parsedBody) {
     const fp = enforceOpencodeFingerprint(parsedBody, target.pathname);
     callerHadTools = fp.callerHadTools;
     callerCaseRestore = fp.caseRestore;
@@ -1544,7 +1747,7 @@ export function startProxy(
    // Streaming cloak: thread this request's placeholder records into the SSE
    // pipe so streamed deltas get the same strip+restore as aggregated bodies.
    // Kilo/Cline/OVH bypass the fingerprint, so their streams stay verbatim.
-   const streamCloak: StreamCloakOptions | undefined = !isKilo && !isCline && !isOvh && callerInjected !== undefined
+   const streamCloak: StreamCloakOptions | undefined = !isKilo && !isCline && !isOvh && !isKiro && callerInjected !== undefined
     ? { callerHadTools, caseRestore: callerCaseRestore, findGlob: callerFindGlob, injected: callerInjected, argSchemas: callerArgSchemas, pathname: target.pathname }
     : undefined;
 
@@ -1556,7 +1759,7 @@ export function startProxy(
    // Zen-lane only (Kilo/Cline/OVH are served verbatim) and dormant while the
    // Zen catalog declares no non-chat api — a new responses or messages entry
    // re-arms it automatically.
-   if (!isKilo && !isCline && !isOvh && typeof parsedBody?.model === "string") {
+   if (!isKilo && !isCline && !isOvh && !isKiro && typeof parsedBody?.model === "string") {
     const knownDef = MODEL_MAP.get(String(parsedBody.model));
     if (target.pathname.endsWith("/chat/completions") && knownDef?.api && knownDef.api !== "openai-completions") {
      log("warn", `model ${String(parsedBody.model)} expects ${knownDef.api} but got ${target.pathname} — stale provider registration (restart Pi/OMP after upgrade)`, { model: String(parsedBody.model), path: target.pathname }, reqId);
@@ -1582,11 +1785,16 @@ export function startProxy(
       clientRequestedStream,
       sessionKey,
      });
-   } else if (isOvh && parsedBody) {
-    // OVH serves chat upstream only (see handleOvhRequest): direct, keyless,
-    // no fingerprint, and a responses-path body translated to chat and back.
-    await handleOvhRequest({ parsedBody, pathname: target.pathname, req, res, reqId, clientRequestedStream });
-   } else {
+    } else if (isOvh && parsedBody) {
+     // OVH serves chat upstream only (see handleOvhRequest): direct, keyless,
+     // no fingerprint, and a responses-path body translated to chat and back.
+     await handleOvhRequest({ parsedBody, pathname: target.pathname, req, res, reqId, clientRequestedStream });
+    } else if (isKiro && parsedBody) {
+     // Kiro is a direct-only EventStream lane (never relay pool, no opencode
+     // fingerprint) whose upstream answers binary AWS EventStream; the handler
+     // decodes it to OpenAI SSE and maps chat/responses shapes both ways.
+     await handleKiroRequest({ parsedBody, pathname: target.pathname, req, res, reqId, clientRequestedStream });
+    } else {
      // OpenCode routing — relay egress is for free-catalog models
      // only; unknown/paid models go direct upstream.
      const relayState = getActiveRelayState();
@@ -2009,8 +2217,8 @@ export function startProxy(
       // Gated upstream: a 403 free-tier gate is a final answer, not a
       // stream — buffer it and attach the recovery hint instead of
       // piping it through as a stream body.
-     if (upstreamRes.status === 403) {
-      const rawText403 = await upstreamRes.text();
+      if (upstreamRes.status === 403) {
+       const rawText403 = await upstreamRes.text();
        const data = withFreeTierHint(403, rawText403);
        const ct403 = upstreamRes.headers.get("content-type") || "application/json";
        res.writeHead(403, { "content-type": ct403 });

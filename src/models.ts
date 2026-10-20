@@ -1,12 +1,15 @@
 /**
  * Static model definitions and upstream routing catalogs for pi-freeflow
  *
- * Defines the 35 verified free models (live-verified 2026-10-18):
+ * Defines the 50 verified free models (the OpenCode Zen, KiloCode, Cline and
+ * OVHcloud figures were live-verified 2026-10-18; the Kiro figures are
+ * registry-carried):
  * - 12 OpenCode Zen models (all Chat Completions — the last Responses model,
  *   muse-spark-1.2-contributor-free, was deprecated upstream 2026-10-18)
  * - 13 KiloCode Keyless Gateway models (OpenRouter format)
  * - 2 Cline direct-only models (per-user pool; one is Responses API)
  * - 8 OVHcloud AI Endpoints models (keyless, direct-only)
+ * - 15 Kiro models (direct-only, bearer token via PI_FREEFLOW_KIRO_TOKEN)
  */
 
 import type { ModelDef, ThinkingLevelMap, Upstream } from "./types.ts";
@@ -50,7 +53,7 @@ export const OPENCODE_MODELS: ModelDef[] = [
   reasoning: true,
   contextWindow: 1_048_576,
   maxTokens: 131_072,
- input: ["text", "image", "video"],
+  input: ["text", "image", "video"],
   thinkingLevelMap: {
    off: null,
    minimal: "low",
@@ -162,7 +165,7 @@ export const OPENCODE_MODELS: ModelDef[] = [
   reasoning: true,
   contextWindow: 1_048_576,
   maxTokens: 524_288,
- input: ["text", "image", "video"],
+  input: ["text", "image", "video"],
   thinkingLevelMap: {
    off: null,
    minimal: null,
@@ -288,7 +291,7 @@ export const OPENCODE_MODELS: ModelDef[] = [
    max: null,
   },
  },
-{
+ {
   // Added 2026-10-15: new free model on the OpenCode Zen lane. Live-verified by
   // probe, NOT copied from the published catalog — the entry for this exact
   // free id claimed 200,000 context, which the gateway contradicts (see below).
@@ -325,7 +328,7 @@ export const OPENCODE_MODELS: ModelDef[] = [
    xhigh: "xhigh",
    max: "max",
   },
-},
+ },
 ];
 
 /**
@@ -375,7 +378,7 @@ export const KILO_MODELS: ModelDef[] = [
   // context with an output figure the spec does not carry.
   contextWindow: 262_144,
   maxTokens: 65_536,
- input: ["text", "image", "video"],
+  input: ["text", "image", "video"],
   thinkingFormat: "openrouter",
   thinkingLevelMap: KILO_REASONING_MAP,
  },
@@ -530,7 +533,7 @@ export const CLINE_MODELS: ModelDef[] = [
   contextWindow: 1_048_576,
   maxTokens: 131_072,
   api: "openai-responses",
- input: ["text", "image", "video"],
+  input: ["text", "image", "video"],
   thinkingLevelMap: {
    off: null,
    minimal: "minimal",
@@ -545,11 +548,51 @@ export const CLINE_MODELS: ModelDef[] = [
   id: "z-ai/glm-5.3-flash",
   name: "GLM 5.3 Flash [Cline]",
   reasoning: true,
- contextWindow: 1_048_576,
+  contextWindow: 1_048_576,
   maxTokens: 131_072,
- input: ["text", "image", "video"],
+  input: ["text", "image", "video"],
   thinkingLevelMap: CLINE_FLASH_REASONING_MAP,
  },
+];
+
+/**
+ * Effort map for Kiro's Claude models. The Kiro request shape carries no
+ * effort-control surface, so the level picked in the host is not forwarded
+ * upstream — the map only decides which levels the host renders. The Claude
+ * entries count as reasoning models because the upstream surfaces reasoning
+ * output (`reasoningContentEvent` frames become `reasoning_content` deltas
+ * in kiro-transform.ts), not because the effort is honoured.
+ */
+const KIRO_REASONING_MAP: ThinkingLevelMap = {
+ off: null,
+ minimal: "minimal",
+ low: "low",
+ medium: "medium",
+ high: "high",
+ xhigh: "xhigh",
+ max: null,
+};
+
+/**
+ * Kiro free models (direct-only, never relay). Base model IDs only —
+ * `-thinking`/`-agentic` suffixes are host pi-ai's concern (AGENTS.md).
+ */
+export const KIRO_MODELS: ModelDef[] = [
+ { id: "claude-opus-5.5", name: "Claude Opus 5.5 [Kiro]", reasoning: true, contextWindow: 1_000_000, maxTokens: 32_000, thinkingLevelMap: KIRO_REASONING_MAP },
+ { id: "claude-opus-5", name: "Claude Opus 5 [Kiro]", reasoning: true, contextWindow: 1_000_000, maxTokens: 32_000, thinkingLevelMap: KIRO_REASONING_MAP },
+ { id: "claude-opus-4.8", name: "Claude Opus 4.8 [Kiro]", reasoning: true, contextWindow: 1_000_000, maxTokens: 32_000, thinkingLevelMap: KIRO_REASONING_MAP },
+ { id: "claude-opus-4.7", name: "Claude Opus 4.7 [Kiro]", reasoning: true, contextWindow: 1_000_000, maxTokens: 32_000, thinkingLevelMap: KIRO_REASONING_MAP },
+ { id: "claude-opus-4.5", name: "Claude Opus 4.5 [Kiro]", reasoning: true, contextWindow: 1_000_000, maxTokens: 32_000, thinkingLevelMap: KIRO_REASONING_MAP },
+ { id: "claude-sonnet-5", name: "Claude Sonnet 5 [Kiro]", reasoning: true, contextWindow: 200_000, maxTokens: 32_000, thinkingLevelMap: KIRO_REASONING_MAP },
+ { id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5 [Kiro]", reasoning: true, contextWindow: 200_000, maxTokens: 32_000, thinkingLevelMap: KIRO_REASONING_MAP },
+ { id: "claude-haiku-4.5", name: "Claude Haiku 4.5 [Kiro]", reasoning: true, contextWindow: 200_000, maxTokens: 32_000, thinkingLevelMap: KIRO_REASONING_MAP },
+ { id: "deepseek-3.2", name: "DeepSeek 3.2 [Kiro]", reasoning: false, contextWindow: 128_000, maxTokens: 32_000 },
+ { id: "qwen3-coder-next", name: "Qwen3 Coder Next [Kiro]", reasoning: false, contextWindow: 128_000, maxTokens: 32_000 },
+ { id: "glm-5", name: "GLM 5 [Kiro]", reasoning: false, contextWindow: 128_000, maxTokens: 32_000 },
+ { id: "MiniMax-M2.5", name: "MiniMax M2.5 [Kiro]", reasoning: false, contextWindow: 128_000, maxTokens: 32_000 },
+ { id: "gpt-5.6-sol", name: "GPT 5.6 Sol [Kiro]", reasoning: false, contextWindow: 272_000, maxTokens: 32_000 },
+ { id: "gpt-5.6-terra", name: "GPT 5.6 Terra [Kiro]", reasoning: false, contextWindow: 272_000, maxTokens: 32_000 },
+ { id: "gpt-5.6-luna", name: "GPT 5.6 Luna [Kiro]", reasoning: false, contextWindow: 272_000, maxTokens: 32_000 },
 ];
 
 /**
@@ -726,15 +769,15 @@ export const MODEL_ALIASES: Record<string, string> = {
  "laguna-xs-2.1:free": "poolside/laguna-xs-2.1:free",
  "kilo-auto": "kilo-auto/free",
  "openrouter": "openrouter/free",
-// OVHcloud AI Endpoints — slash-free spellings of the `ovh-free/` ids.
-"gpt-oss-120b": "ovh-free/gpt-oss-120b",
-"gpt-oss-20b": "ovh-free/gpt-oss-20b",
-"qwen3.5-397b": "ovh-free/Qwen3.5-397B-A17B",
-"qwen3.5-9b": "ovh-free/Qwen3.5-9B",
-"qwen3.6-27b": "ovh-free/Qwen3.6-27B",
-"qwen3.8-27b": "ovh-free/Qwen3.8-27B",
-"mistral-small-3.2": "ovh-free/Mistral-Small-3.2-24B-Instruct-2506",
-"llama-3.3-70b": "ovh-free/Meta-Llama-3_3-70B-Instruct",
+ // OVHcloud AI Endpoints — slash-free spellings of the `ovh-free/` ids.
+ "gpt-oss-120b": "ovh-free/gpt-oss-120b",
+ "gpt-oss-20b": "ovh-free/gpt-oss-20b",
+ "qwen3.5-397b": "ovh-free/Qwen3.5-397B-A17B",
+ "qwen3.5-9b": "ovh-free/Qwen3.5-9B",
+ "qwen3.6-27b": "ovh-free/Qwen3.6-27B",
+ "qwen3.8-27b": "ovh-free/Qwen3.8-27B",
+ "mistral-small-3.2": "ovh-free/Mistral-Small-3.2-24B-Instruct-2506",
+ "llama-3.3-70b": "ovh-free/Meta-Llama-3_3-70B-Instruct",
 };
 
 /**
@@ -765,6 +808,16 @@ export const CLINE_MODEL_IDS = new Set<string>([
 ]);
 
 /**
+ * Set of all Kiro model IDs (including aliases) for fast lookup
+ */
+export const KIRO_MODEL_IDS = new Set<string>([
+ ...KIRO_MODELS.map((m) => m.id),
+ ...Object.entries(MODEL_ALIASES)
+  .filter(([_, target]) => KIRO_MODELS.some((km) => km.id === target))
+  .map(([alias]) => alias),
+]);
+
+/**
  * Set of all OVH model IDs (including aliases) for fast lookup
  */
 export const OVH_MODEL_IDS = new Set<string>([
@@ -774,9 +827,9 @@ export const OVH_MODEL_IDS = new Set<string>([
   .map(([alias]) => alias),
 ]);
 /**
- * Combined list of all 35 static free models (canonical)
+ * Combined list of all 50 static free models (canonical)
  */
-export const ALL_MODELS: ModelDef[] = [...OPENCODE_MODELS, ...KILO_MODELS, ...CLINE_MODELS, ...OVH_MODELS];
+export const ALL_MODELS: ModelDef[] = [...OPENCODE_MODELS, ...KILO_MODELS, ...CLINE_MODELS, ...OVH_MODELS, ...KIRO_MODELS];
 
 /**
  * Map of model ID -> ModelDef
@@ -817,6 +870,14 @@ export function isClineModel(id: string): boolean {
 }
 
 /**
+ * Check if a model ID belongs to Kiro
+ */
+export function isKiroModel(id: string): boolean {
+ const canonical = resolveCanonicalModelId(id);
+ return KIRO_MODEL_IDS.has(id) || KIRO_MODEL_IDS.has(canonical);
+}
+
+/**
  * Check if a model ID belongs to OVHcloud AI Endpoints
  */
 export function isOvhModel(id: string): boolean {
@@ -830,5 +891,6 @@ export function isOvhModel(id: string): boolean {
 export function getModelUpstream(id: string): Upstream {
  if (isClineModel(id)) return "cline";
  if (isOvhModel(id)) return "ovh";
+ if (isKiroModel(id)) return "kiro";
  return isKiloModel(id) ? "kilo" : "opencode";
 }

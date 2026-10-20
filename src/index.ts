@@ -132,7 +132,7 @@ export function buildProviderConfig(
     id: m.id,
     name: m.name,
     api: m.api,
-    owned_by: m.source === "kilo" ? "kilocode" : m.source === "cline" ? "clinecode" : m.source === "ovh" ? "ovhcloud" : "opencode",
+    owned_by: m.source === "kilo" ? "kilocode" : m.source === "cline" ? "clinecode" : m.source === "ovh" ? "ovhcloud" : m.source === "kiro" ? "kiro" : "opencode",
     reasoning: m.reasoning,
     thinking: m.reasoning
      ? {
@@ -152,7 +152,7 @@ export function buildProviderConfig(
      }
      : m.api === "openai-responses"
       ? { sessionAffinityFormat: "openai-nosession" }
-      : m.source === "kilo" || m.source === "cline" || m.source === "ovh"
+      : m.source === "kilo" || m.source === "cline" || m.source === "ovh" || m.source === "kiro"
        ? {
         supportsDeveloperRole: false,
         supportsReasoningEffort: !!m.thinkingLevelMap,

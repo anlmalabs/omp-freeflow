@@ -19,7 +19,7 @@
                    ▼                                           ▼
       ┌─────────────────────────────────────┐                 ┌─────────────────────────────────────┐
       │        Sticky Rolling Relay         │ ──(Failover)──► │           Direct Upstream           │
-      │ (Cloudflare / Vercel / Deno Deploy) │                 │ (OpenCode/Kilo/Cline/OVHcloud)      │
+      │ (Cloudflare / Vercel / Deno Deploy) │                 │ (OpenCode/Kilo/Cline/OVHcloud/Kiro) │
       └─────────────────────────────────────┘                 └─────────────────────────────────────┘
 ```
 
@@ -37,9 +37,12 @@ src/
 ├── deploy.ts                # Guided relay deploy (vercel/cloudflare/deno), in-memory tokens
 ├── health.ts                # Loopback-only /health endpoint handler
 ├── index.ts                 # Extension bootstrap, provider registration, lifecycle hooks
+├── kiro-eventstream.ts      # AWS EventStream binary framing (CRC32, frame decode/encode)
+├── kiro-request.ts          # OpenAI -> Kiro conversationState request builder
+├── kiro-transform.ts        # Kiro EventStream -> OpenAI SSE transform
 ├── lease.ts                 # Client lease registry and heartbeat expiry for daemon retirement
 ├── logger.ts                # Structured, leveled, rotating file logger (10MB x 10)
-├── models.ts                # 35 curated free model definitions and upstream mappings
+├── models.ts                # 50 curated free model definitions and upstream mappings
 ├── opencode-fingerprint.ts  # Zen free-tier fingerprint enforcement + SSE stream aggregation
 ├── probe.ts                 # Relay reachability probe (HTTP 200 + latency)
 ├── proxy.ts                 # Loopback HTTP proxy server on 28180 with master/worker reuse
@@ -137,7 +140,7 @@ To prevent network burst storms when multiple subagents boot simultaneously, the
 - **Location**: `~/.pi/agent/pi-freeflow-catalog-cache.json`
 - **TTL**: 24 hours (86,400,000 ms)
 - **Atomic Write**: Uses a temp file + `fs.renameSync` to prevent corruption under concurrent writes
-- **Boot Speed**: Subagents load all 35 models from disk cache in ~0.1ms
+- **Boot Speed**: Subagents load all 50 models from disk cache in ~0.1ms
 
 ## Stream Lifecycle Safety
 

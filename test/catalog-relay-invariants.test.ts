@@ -1,19 +1,20 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { ALL_MODELS, KILO_MODELS, OPENCODE_MODELS, CLINE_MODELS, OVH_MODELS, MODEL_ALIASES, resolveCanonicalModelId, isKiloModel } from "../src/models.ts";
+import { ALL_MODELS, KILO_MODELS, OPENCODE_MODELS, CLINE_MODELS, OVH_MODELS, KIRO_MODELS, MODEL_ALIASES, resolveCanonicalModelId, isKiloModel } from "../src/models.ts";
 import { LOG_MAX_BYTES, LOG_MAX_FILES } from "../src/config.ts";
 import { VERCEL_RELAY_WORKER, CLOUDFLARE_RELAY_WORKER, DENO_RELAY_SCRIPT } from "../src/deploy.ts";
 import { isSubstantial } from "../src/stream-pipe.ts";
 import { loadRelayCore } from "./_relay-core.ts";
 
-test("catalog 35 = 12 OpenCode + 13 Kilo + 2 Cline + 8 OVH", () => {
+test("catalog 50 = 12 OpenCode + 13 Kilo + 2 Cline + 8 OVH + 15 Kiro", () => {
 	assert.equal(OPENCODE_MODELS.length, 12);
 	assert.equal(KILO_MODELS.length, 13);
 	assert.equal(CLINE_MODELS.length, 2);
 	assert.equal(OVH_MODELS.length, 8);
-	assert.equal(ALL_MODELS.length, 35);
-	assert.equal(new Set(ALL_MODELS.map((m) => m.id)).size, 35);
+	assert.equal(KIRO_MODELS.length, 15);
+	assert.equal(ALL_MODELS.length, 50);
+	assert.equal(new Set(ALL_MODELS.map((m) => m.id)).size, 50);
 });
 
 test("aliases deduplicated and wrong removed", () => {

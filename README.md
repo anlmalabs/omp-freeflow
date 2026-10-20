@@ -1,6 +1,6 @@
 # pi-freeflow
 
-> 35 free models with up to 1M context. No API keys to manage. Add your own relays to spread requests across more IPs.
+> 50 free models with up to 1M context. No API keys to manage. Add your own relays to spread requests across more IPs.
 
 Thin by design: a model list, a relay proxy, and a log. The host (`pi-ai`) handles thinking, normalization, and provider behavior.
 
@@ -16,10 +16,10 @@ Thin by design: a model list, a relay proxy, and a log. The host (`pi-ai`) handl
 
 | Feature | What it does | Cost |
 | :--- | :--- | :--- |
-| **35 free models** | 12 from OpenCode Zen, 13 from KiloCode Gateway, 2 from Cline, 8 from OVHcloud AI Endpoints, context windows up to 1M. Full list below. | **$0** |
+| **50 free models** | 12 from OpenCode Zen (deprecated — see below), 13 from KiloCode Gateway, 2 from Cline, 8 from OVHcloud AI Endpoints, 15 from Kiro (bearer token, deprecated — see below), context windows up to 1M. Full list below. | **$0** |
 | **Relay pool** | Route requests through your own relays: a self-hosted egress pool (many egress IPs on one small host) or Cloudflare Workers / Deno Deploy / Vercel Edge workers. Traffic spreads across the pool, or stays on one sticky relay. A relay that rate-limits, times out, or drops the connection cools down while healthy ones take its traffic. | **$0** beyond your host or platforms' free tiers |
 | **Automatic fallback** | When every relay is cooling down, requests go direct to upstream instead of failing. | **$0** |
-| **Short model names** | Most models have a slash-free, colon-free alias, plus an optional `:effort` suffix for thinking depth. You type `freeflow/<name>`; the two Cline models have no alias and must be typed in full. | **$0** |
+| **Short model names** | Most models have a slash-free, colon-free alias, plus an optional `:effort` suffix for thinking depth. You type `freeflow/<name>`; the two Cline models and the 15 Kiro models have no alias and must be typed in full. | **$0** |
 | **Shared local proxy** | One daemon on `127.0.0.1:28180` serves every session on the machine, so parallel subagents reuse it instead of opening their own connections. Loopback-only and token-gated: hosts send the token automatically, external tools read `~/.pi/agent/token`. | **$0** |
 | **Logs you can read** | `~/.pi/agent/pi-freeflow.log`, rotated at 10MB. Tail it with `/freeflow logs`. | **$0** |
 
@@ -213,7 +213,7 @@ The same command set works identically in OMP and Pi:
 
 ---
 
-### 35 models, one command
+### 50 models, one command
 
 ```bash
 /model → freeflow → pick
@@ -221,6 +221,8 @@ The same command set works identically in OMP and Pi:
 
 Every model specification is reconciled against [models.dev](https://models.dev/), [OpenRouter](https://openrouter.ai/), and OMP's built-in catalog on 2026-10-20, and a free and a non-free variant of the same model share one spec — the highest published context window, output ceiling, and input modalities across its twins. Three lane limits stay authoritative over that reconciliation: cat-jam's probe-measured 256K context window, OVH's advertised context windows, and the 384K window its only provider actually serves for Dots3-Note.
 #### OpenCode Zen (12 models), Chat Completions API
+
+> **Deprecated.** This lane is a stopgap and will be retired in favour of the official OpenCode CLI ACP integration. It works today, but it is not where these models are headed — expect this section to disappear once the ACP path lands.
 
 Good defaults for long coding sessions and agentic work.
 
@@ -291,6 +293,32 @@ All eight talk the normal chat API. Hosts that prefer the responses API work too
 | `mistral-small-3.2` (`ovh-free/Mistral-Small-3.2-24B-Instruct-2506`) | Mistral AI | **128K** (131.072) | **32K** (32.768) | ❌ | ✅ |
 | `llama-3.3-70b` (`ovh-free/Meta-Llama-3_3-70B-Instruct`) | Meta | **128K** (131.072) | **32K** (32.768) | ❌ | ❌ |
 
+#### Kiro (15 models)
+
+> **Deprecated.** This lane is a stopgap and will be retired in favour of the official Kiro CLI ACP integration, which carries the credential and the session for you instead of a hand-exported bearer token. It works today, but it is not where these models are headed — expect this section to disappear once the ACP path lands.
+
+One bearer token, exported once. This lane is direct only and never rides the relay pool, so your relays keep serving the same upstreams they always did — adding Kiro models does not pull them in. There is no login command for it: no device code, no browser sign-in, no accounts pool to manage. Set `PI_FREEFLOW_KIRO_TOKEN` to a token you obtained out of band (in the environment that starts your host, however you usually pass variables to it), and every model below is ready to pick. Without it the lane answers `501` rather than firing an anonymous request upstream and handing you an opaque failure.
+
+Pick them by ID — there are no slash-free aliases on this lane. The Claude models surface reasoning output and so take every thinking level from `minimal` through `xhigh`, but the level you pick is not forwarded to Kiro, which exposes no effort control. The rest are not reasoning models, so no level selector is offered for them.
+
+| Model ID | Creator / Lab | Context | Max Output | Thinking | Vision |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `claude-opus-5.5` | Anthropic | **1M** (1.000.000) | **32K** (32.000) | `minimal … xhigh` | — |
+| `claude-opus-5` | Anthropic | **1M** (1.000.000) | **32K** (32.000) | `minimal … xhigh` | — |
+| `claude-opus-4.8` | Anthropic | **1M** (1.000.000) | **32K** (32.000) | `minimal … xhigh` | — |
+| `claude-opus-4.7` | Anthropic | **1M** (1.000.000) | **32K** (32.000) | `minimal … xhigh` | — |
+| `claude-opus-4.5` | Anthropic | **1M** (1.000.000) | **32K** (32.000) | `minimal … xhigh` | — |
+| `claude-sonnet-5` | Anthropic | **200K** (200.000) | **32K** (32.000) | `minimal … xhigh` | — |
+| `claude-sonnet-4.5` | Anthropic | **200K** (200.000) | **32K** (32.000) | `minimal … xhigh` | — |
+| `claude-haiku-4.5` | Anthropic | **200K** (200.000) | **32K** (32.000) | `minimal … xhigh` | — |
+| `deepseek-3.2` | DeepSeek | **128K** (128.000) | **32K** (32.000) | ❌ | — |
+| `qwen3-coder-next` | Alibaba Qwen | **128K** (128.000) | **32K** (32.000) | ❌ | — |
+| `glm-5` | Zhipu AI | **128K** (128.000) | **32K** (32.000) | ❌ | — |
+| `MiniMax-M2.5` | MiniMax | **128K** (128.000) | **32K** (32.000) | ❌ | — |
+| `gpt-5.6-sol` | OpenAI | **272K** (272.000) | **32K** (32.000) | ❌ | — |
+| `gpt-5.6-terra` | OpenAI | **272K** (272.000) | **32K** (32.000) | ❌ | — |
+| `gpt-5.6-luna` | OpenAI | **272K** (272.000) | **32K** (32.000) | ❌ | — |
+
 ---
 
 ### Logs and debugging
@@ -309,14 +337,17 @@ cat ~/.pi/agent/pi-freeflow.log | tail -n 50
 
 This package stays thin. It ships three things: a model catalog, a relay proxy, and a log. There is no build step and one runtime dependency (`undici`). Thinking and prompt normalization stay with the host (`pi-ai`).
 
-About 52k lines including tests: `src/` is roughly 19.4k across 30 files, and the 90 test files add roughly 32.4k more. The full suite (sandboxed, network-mocked) and typecheck pass before every release. See CHANGELOG.md.
+About 54k lines including tests: `src/` is roughly 20.5k across 33 files, and the 95 test files add roughly 33.5k more. The full suite (sandboxed, network-mocked) and typecheck pass before every release. See CHANGELOG.md.
 
 ---
 
 ### FAQ
 
 **Do I need API keys?**
-No. OpenCode and Kilo free models need no key of your own. The proxy strips the placeholder credential the host provider registers with — forwarding it upstream gets a `401` (for Kilo, `Bearer kilo-free` answers `401 INVALID_TOKEN`) — so your key, if any, never leaves the machine. For OpenCode Zen it then adds the fixed `Authorization: Bearer public` the current `/inference/v1` gateway requires; the Kilo and OVHcloud lanes go out with no `Authorization` header at all. You never paste a key. Cline free models need a browser login instead: `/freeflow cline login` saves it to a per-user pool on your machine. OVHcloud AI Endpoints models need no account and no key at all.
+No. OpenCode and Kilo free models need no key of your own. The proxy strips the placeholder credential the host provider registers with — forwarding it upstream gets a `401` (for Kilo, `Bearer kilo-free` answers `401 INVALID_TOKEN`) — so your key, if any, never leaves the machine. For OpenCode Zen it then adds the fixed `Authorization: Bearer public` the current `/inference/v1` gateway requires; the Kilo and OVHcloud lanes go out with no `Authorization` header at all. You never paste a key. Cline free models need a browser login instead: `/freeflow cline login` saves it to a per-user pool on your machine. OVHcloud AI Endpoints models need no account and no key at all. Kiro models need a bearer token you obtain out of band and put in the `PI_FREEFLOW_KIRO_TOKEN` environment variable — there is no login command for that lane, so there is no prompt to walk you through one. The token never leaves your machine: the proxy sends it to Kiro only.
+
+**Which lanes are deprecated?**
+Two of them: OpenCode Zen and Kiro. Both still work, but both are stopgaps on their way to the official CLI ACP integrations — the OpenCode CLI ACP integration for the Zen lane, the Kiro CLI ACP integration for the Kiro lane. Expect both sections to disappear once those ACP paths land. The KiloCode Gateway, Cline, and OVHcloud AI Endpoints lanes are not affected.
 
 **What if all relays hit rate limits?**
 The proxy tries direct upstream. If that is also rate-limited, the host shows the limit. That number is the shared upstream cap; without relays you would hit the same wall sooner.
@@ -382,10 +413,13 @@ pnpm smoke       # verifies extensions/index.ts loads without crashing
 #### Project structure
 
 ```
-├── models.ts                # 35-model catalog definitions
+├── models.ts                # 50-model catalog definitions
 ├── index.ts                 # extension entry, lifecycle hooks
 ├── catalog.ts               # model catalog cache (24h disk)
 ├── proxy.ts                 # local proxy server (127.0.0.1:28180)
+├── kiro-request.ts          # OpenAI -> Kiro conversationState request builder
+├── kiro-transform.ts        # Kiro EventStream -> OpenAI SSE transform
+├── kiro-eventstream.ts      # AWS EventStream binary framing (CRC32, frames)
 ├── client.ts                # session-side daemon attach/spawn and heartbeat
 ├── daemon.ts                # detached proxy daemon process (owns the port)
 ├── lease.ts                 # client lease registry and TTL retirement

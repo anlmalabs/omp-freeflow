@@ -10,6 +10,7 @@ import {
  KILO_MODELS,
  CLINE_MODELS,
  OVH_MODELS,
+ KIRO_MODELS,
  OVH_MODEL_PREFIX,
  ovhUpstreamModelId,
  KILO_MODEL_IDS,
@@ -22,14 +23,15 @@ import {
 } from "../src/models.ts";
 import { DEAD_MODEL_IDS } from "../src/catalog.ts";
 
-test("catalog composition: OpenCode + Kilo + Cline + OVH lists make up the full catalog", () => {
+test("catalog composition: OpenCode + Kilo + Cline + OVH + Kiro lists make up the full catalog", () => {
  // Composition over hardcoded counts — resilient to catalog growth while
  // still locking the invariant that every model belongs to exactly one source.
  assert.ok(OPENCODE_MODELS.length > 0, "OpenCode list must be non-empty");
  assert.ok(KILO_MODELS.length > 0, "Kilo list must be non-empty");
  assert.ok(CLINE_MODELS.length > 0, "Cline list must be non-empty");
  assert.ok(OVH_MODELS.length > 0, "OVH list must be non-empty");
- assert.equal(OPENCODE_MODELS.length + KILO_MODELS.length + CLINE_MODELS.length + OVH_MODELS.length, ALL_MODELS.length);
+ assert.ok(KIRO_MODELS.length > 0, "Kiro list must be non-empty");
+ assert.equal(OPENCODE_MODELS.length + KILO_MODELS.length + CLINE_MODELS.length + OVH_MODELS.length + KIRO_MODELS.length, ALL_MODELS.length);
 });
 
 test("all model IDs are unique", () => {
@@ -56,6 +58,8 @@ test("1M context window models are properly configured", () => {
  // Known 1M models must exist with a >= 1M window (spec lock), and every
  // model in the catalog advertising >= 1M must be in that known list
  // (drift guard — no unaccounted-for 1M models).
+ // Kiro's Claude family: 1M ctx is carried from 9router's Anthropic-family
+ // default, NOT probed — see the spec-lock note below before raising it.
 	const oneMillionModels = [
 		"cline-free/muse-spark-1.3-contributor",
 		"z-ai/glm-5.3-flash",
@@ -73,6 +77,11 @@ test("1M context window models are properly configured", () => {
 		"nvidia/nemotron-3.5-lightning:free",
 		"poolside/laguna-s-2.1:free",
 		"thinkingmachines/inkling-small:free",
+		"claude-opus-5.5",
+		"claude-opus-5",
+		"claude-opus-4.8",
+		"claude-opus-4.7",
+		"claude-opus-4.5",
 	];
 
  for (const id of oneMillionModels) {
@@ -344,6 +353,28 @@ test("catalog spec lock: live-verified ctx/max/reasoning per model", () => {
   "ovh-free/Qwen3.8-27B": { ctx: 262_144, max: 131_072, reasoning: true },
   "ovh-free/Mistral-Small-3.2-24B-Instruct-2506": { ctx: 131_072, max: 32_768, reasoning: false },
   "ovh-free/Meta-Llama-3_3-70B-Instruct": { ctx: 131_072, max: 32_768, reasoning: false },
+  // Kiro direct-only (EventStream lane). Values carried from 9router's
+  // provider registry, NOT live-probed here: the Kiro lane has no live
+  // harness in this repo yet, so ctx/max are the registry's published
+  // figures (Claude family 1M, Sonnet/Haiku 200K, others 128K, GPT-5.6
+  // family 272K) and maxTokens is the 32K the registry's
+  // `inferenceConfig.maxTokens` sends upstream. reasoning is true only for
+  // the Anthropic entries. Re-probe before raising any number.
+  "claude-opus-5.5": { ctx: 1_000_000, max: 32_000, reasoning: true },
+  "claude-opus-5": { ctx: 1_000_000, max: 32_000, reasoning: true },
+  "claude-opus-4.8": { ctx: 1_000_000, max: 32_000, reasoning: true },
+  "claude-opus-4.7": { ctx: 1_000_000, max: 32_000, reasoning: true },
+  "claude-opus-4.5": { ctx: 1_000_000, max: 32_000, reasoning: true },
+  "claude-sonnet-5": { ctx: 200_000, max: 32_000, reasoning: true },
+  "claude-sonnet-4.5": { ctx: 200_000, max: 32_000, reasoning: true },
+  "claude-haiku-4.5": { ctx: 200_000, max: 32_000, reasoning: true },
+  "deepseek-3.2": { ctx: 128_000, max: 32_000, reasoning: false },
+  "qwen3-coder-next": { ctx: 128_000, max: 32_000, reasoning: false },
+  "glm-5": { ctx: 128_000, max: 32_000, reasoning: false },
+  "MiniMax-M2.5": { ctx: 128_000, max: 32_000, reasoning: false },
+  "gpt-5.6-sol": { ctx: 272_000, max: 32_000, reasoning: false },
+  "gpt-5.6-terra": { ctx: 272_000, max: 32_000, reasoning: false },
+  "gpt-5.6-luna": { ctx: 272_000, max: 32_000, reasoning: false },
  };
  for (const [id, { ctx, max, reasoning }] of Object.entries(locked)) {
   const m = getModelDef(id);

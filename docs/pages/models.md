@@ -1,6 +1,8 @@
 # Model Catalog & Upstream Routing
 
-pi-freeflow provides unified access to **35 curated free models** across four upstream providers: **OpenCode Zen**, **KiloCode Gateway**, **Cline**, and **OVHcloud AI Endpoints**.
+pi-freeflow provides unified access to **50 curated free models** across five upstream providers: **OpenCode Zen**, **KiloCode Gateway**, **Cline**, **OVHcloud AI Endpoints**, and **Kiro**.
+
+Two of those lanes are deprecated: **OpenCode Zen** and **Kiro**. Both still work, but both are stopgaps on their way to the official CLI ACP integrations — the OpenCode CLI ACP integration for the Zen lane, the Kiro CLI ACP integration for the Kiro lane. Expect both to disappear once those ACP paths land. The KiloCode Gateway, Cline, and OVHcloud AI Endpoints lanes are not affected.
 
 ## Upstream Protocol Distinction
 
@@ -10,6 +12,7 @@ pi-freeflow provides unified access to **35 curated free models** across four up
 - **Config**: `api: "openai-responses"`, session affinity via OpenAI-nosession
 
 ### OpenCode Zen — Chat Completions (`/v1/chat/completions`)
+- **Status**: deprecated — this lane is a stopgap and will be retired in favour of the official OpenCode CLI ACP integration
 - **Endpoint**: `https://opencode.ai/inference/v1/chat/completions`
 - **Models**: 12 models (Cat Jam, DeepSeek V4.1 Flash, Space Bunny, LongCat, GLM-5.3 Flash, Beam, Exo, MiMo, Nemotron, Big Pickle, etc.)
 - **Config**: `api: "openai-completions"`, supports reasoning effort
@@ -37,7 +40,15 @@ pi-freeflow provides unified access to **35 curated free models** across four up
 - **Routing**: direct only, never through the relay pool
 - **Config**: `api: "openai-completions"`. Chat is the only upstream shape: OVH's responses endpoint rejects every array `input` with `422 input: data did not match any variant of untagged enum ResponseInput` and accepts only a bare string, so a responses-path request is translated to chat upstream and the answer mapped back — the same shape mapping the Cline lane uses.
 
-## 35 Model Specifications
+### Kiro (`/generateAssistantResponse`)
+- **Status**: deprecated — this lane is a stopgap and will be retired in favour of the official Kiro CLI ACP integration, which carries the credential and the session for you instead of a hand-exported bearer token
+- **Endpoint**: `https://runtime.us-east-1.kiro.dev/generateAssistantResponse`
+- **Auth**: bearer token from `PI_FREEFLOW_KIRO_TOKEN`, obtained out of band and sent only to Kiro — there is no login command and no device code on this lane, and without the token the lane answers `501` instead of firing an anonymous request upstream
+- **Models**: 15 models (Claude Opus 5.5/5/4.8/4.7/4.5, Claude Sonnet 5/4.5, Claude Haiku 4.5, DeepSeek 3.2, Qwen3 Coder Next, GLM 5, MiniMax M2.5, GPT 5.6 Sol/Terra/Luna)
+- **Routing**: direct only, never through the relay pool
+- **Protocol**: Kiro answers binary AWS EventStream frames, not OpenAI SSE — the proxy decodes the frames into SSE before the client ever sees them. The lane has no failover path, so it carries a single upstream host.
+
+## 50 Model Specifications
 
 ### OpenCode Zen (12 models)
 
@@ -102,6 +113,28 @@ Anonymous access: no account, no key, no login step. Direct only, never through 
 
 \* MiMo collapses `minimal→low` and `xhigh→high` upstream — 5 labels, 3 effective effort values (low/medium/high).
 
+### Kiro (15 models)
+
+One bearer token, exported once: `PI_FREEFLOW_KIRO_TOKEN`. There is no login command and no device code on this lane — the token is obtained out of band and sent only to Kiro, and without it the lane answers `501` rather than firing an anonymous request upstream. Direct only, never through the relay pool, so adding this lane never pulls your relays into a new upstream. Pick the models by ID — the lane has no slash-free aliases. The Claude models surface reasoning output and so offer every thinking level from `minimal` through `xhigh`, but the level is not forwarded upstream (Kiro exposes no effort control); the rest are not reasoning models and offer no level selector.
+
+| Model ID | Context | Max Output | Thinking | Vision |
+| :--- | ---: | ---: | :--- | :--- |
+| `claude-opus-5.5` | 1,000,000 | 32,000 | `minimal`..`xhigh` | ❌ |
+| `claude-opus-5` | 1,000,000 | 32,000 | `minimal`..`xhigh` | ❌ |
+| `claude-opus-4.8` | 1,000,000 | 32,000 | `minimal`..`xhigh` | ❌ |
+| `claude-opus-4.7` | 1,000,000 | 32,000 | `minimal`..`xhigh` | ❌ |
+| `claude-opus-4.5` | 1,000,000 | 32,000 | `minimal`..`xhigh` | ❌ |
+| `claude-sonnet-5` | 200,000 | 32,000 | `minimal`..`xhigh` | ❌ |
+| `claude-sonnet-4.5` | 200,000 | 32,000 | `minimal`..`xhigh` | ❌ |
+| `claude-haiku-4.5` | 200,000 | 32,000 | `minimal`..`xhigh` | ❌ |
+| `deepseek-3.2` | 128,000 | 32,000 | ❌ | ❌ |
+| `qwen3-coder-next` | 128,000 | 32,000 | ❌ | ❌ |
+| `glm-5` | 128,000 | 32,000 | ❌ | ❌ |
+| `MiniMax-M2.5` | 128,000 | 32,000 | ❌ | ❌ |
+| `gpt-5.6-sol` | 272,000 | 32,000 | ❌ | ❌ |
+| `gpt-5.6-terra` | 272,000 | 32,000 | ❌ | ❌ |
+| `gpt-5.6-luna` | 272,000 | 32,000 | ❌ | ❌ |
+
 ## Sources of Truth & Twin-Model Reconciliation
 
 pi-freeflow configures models using a rigorous multi-source validation pipeline rather than copying unverified claims:
@@ -125,10 +158,11 @@ When a model is available under multiple twin names (e.g. `deepseek-v4.1-flash-f
 
 | Upstream | Models | Host | Wire Protocol | Auth |
 | :--- | :---: | :--- | :--- | :--- |
-| **OpenCode Zen** | 12 | `opencode.ai/inference` | `/inference/v1` (Chat; the Responses lane is wired for future ids) | `Bearer public` |
+| **OpenCode Zen** | 12 | `opencode.ai/inference` | `/inference/v1` (Chat; the Responses lane is wired for future ids) | `Bearer public` — deprecated |
 | **KiloCode Gateway** | 13 | `api.kilo.ai` | `/api/gateway/chat/completions` | Keyless |
 | **Cline** | 2 | `api.cline.bot` | `/api/v1/chat/completions` | Per-user login (`/freeflow cline login`) |
 | **OVHcloud AI Endpoints** | 8 | `oai.endpoints.kepler.ai.cloud.ovh.net` | `/v1/chat/completions` (responses path translated) | Keyless, anonymous |
+| **Kiro** | 15 | `runtime.us-east-1.kiro.dev` | `/generateAssistantResponse` (EventStream decoded to SSE) | Bearer token (`PI_FREEFLOW_KIRO_TOKEN`) — deprecated |
 ## Stealth previews
 
 Masked IDs such as Omen Alpha are tracked on the [Stealth Models Watchlist](/pages/stealth-models). Nothing there enters this table until it is live on a free list and answers a live probe.

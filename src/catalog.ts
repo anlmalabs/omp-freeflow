@@ -174,7 +174,7 @@ export function sanitizeCatalogModels(models: RegisteredModel[]): RegisteredMode
 }
 /**
  * In-memory cache of currently active/available free models.
- * Initialized with all 35 verified models for 0ms instant availability.
+ * Initialized with all 50 verified models for 0ms instant availability.
  */
 let aliveCatalog: RegisteredModel[] = ALL_MODELS.map((m) => ({
  ...m,

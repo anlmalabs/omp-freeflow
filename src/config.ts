@@ -42,6 +42,23 @@ export const CLINE_CHAT_URL = `${CLINE_API_BASE}/chat/completions`;
 // a responses-path caller is translated to chat upstream and back.
 export const OVH_API_BASE = "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1";
 export const OVH_CHAT_URL = `${OVH_API_BASE}/chat/completions`;
+// Kiro (the AWS-backed CodeWhisperer desktop agent) is direct-only: it carries
+// a single out-of-band bearer token rather than a shared credential, has no
+// Zen-style per-IP gate to route around, and so never rides the relay pool. It
+// is deliberately absent from the deployed relay allowlist (src/deploy.ts),
+// which keeps the relay surface at exactly two upstreams. Protocol differs
+// from every other lane: Kiro answers binary AWS EventStream framed bodies,
+// not OpenAI SSE, so the lane decodes it into SSE before the client ever sees
+// it (src/kiro-transform.ts).
+//
+// One host only: the lane has no failover path, so the extra CodeWhisperer
+// aliases would be unreachable. The array shape stays because the proxy reads
+// index 0.
+export const KIRO_STREAM_URLS: readonly string[] = [
+ "https://runtime.us-east-1.kiro.dev/generateAssistantResponse",
+];
+/** Env override carrying an out-of-band Kiro bearer token (harvested or pasted). */
+export const KIRO_TOKEN_ENV = "PI_FREEFLOW_KIRO_TOKEN";
 
 // ── Network & Server defaults ───────────────────────────────────────
 export const DEFAULT_PORT = 28180;
